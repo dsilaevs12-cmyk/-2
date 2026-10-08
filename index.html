@@ -3639,49 +3639,89 @@ function describeGithubError(status) {
   if (status >= 500) return "GitHub временно недоступен (" + status + ")";
   return "Ошибка GitHub (" + status + ")";
 }
-// Anonymous read of a public Gist without a token: browsers block direct
-// calls to api.github.com from pages served on another origin (CORS), so we
-// fall back to gist.githubusercontent.com, which always allows cross-origin
-// GET requests. The raw URL never contains the token, keeping it safe.
+// Anonymous read of a public Gist without a token (see fetchPublicGistFiles).
 async function fetchPublicGistFiles(config) {
-  var indexUrl = "https://gist.github.com/" + encodeURIComponent(config.gistId);
-  var controller = new AbortController();
-  var timedOut = false;
-  syncRuntime.controllers.add(controller);
-  var timer = setTimeout(function () { timedOut = true; controller.abort(); }, 20000);
-  try {
-    var response = await fetch(indexUrl, { method: "GET", signal: controller.signal, cache: "no-store" });
-    if (!response.ok) throw syncHTTPError(response);
-    var html = await response.text();
-    syncCheckGeneration(config);
-    // The embedded payload carries the full list of files with their contents.
-    // Scan from the start marker to the first line break: the object is emitted
-    // as a single JSON line, so any trailing markup on later lines is excluded.
-    var startIndex = html.indexOf("window.gon");
-    if (startIndex === -1) throw new Error("Не удалось прочитать публичный Gist напрямую. Проверьте ID или добавьте токен.");
-    var braceIndex = html.indexOf("{", startIndex);
-    var endIndex = html.indexOf("\n", braceIndex);
-    if (braceIndex === -1 || endIndex === -1) throw new Error("Неизвестная разметка страницы Gist. Обновите приложение или используйте токен.");
-    var payload = html.slice(braceIndex, endIndex).trim().replace(/;+$/, "");
-    var gon;
-    try { gon = JSON.parse(payload); } catch (error) { throw new Error("Некорректные данные публичного Gist от GitHub."); }
-    var files = gon && gon.files;
-    if (!files || typeof files !== "object" || Array.isArray(files)) throw new Error("Пустой или недоступный публичный Gist. Синхронизация остановлена.");
-    var result = {};
-    Object.keys(files).forEach(function (name) {
-      var file = files[name] || {};
-      result[name] = { content: typeof file.raw_content === "string" ? file.raw_content : "", truncated: false, raw_url: typeof file.blob_raw_url === "string" ? file.blob_raw_url : "" };
-    });
-    return result;
-  } catch (error) {
-    syncCheckGeneration(config);
-    if (timedOut) throw new Error("GitHub не ответил за 20 секунд. Изменения сохранены на устройстве.");
-    // Network/CORS failure: surface a friendly hint instead of "Failed to fetch".
-    if (!error.message) error.message = "Браузер заблокировал прямой запрос к GitHub. Откройте журнал через токен или разместите страницу на домене с разрешённым доступом.";
-    throw error;
-  } finally {
-    clearTimeout(timer); syncRuntime.controllers.delete(controller);
+  // Anonymous read of a public Gist works from ANY domain and needs NO token:
+  // gist.githubusercontent.com answers with "Access-Control-Allow-Origin: *",
+  // so the browser never blocks these requests. Strategy:
+  // 1) enumerate journal files via the public embed page (no redirect needed);
+  // 2) if that page is unavailable, follow the short gist URL once in "manual"
+  //    mode and read the Location header (opaque-redirect trick, no CORS);
+  // 3) download every file's raw content directly from gist.githubusercontent.com.
+  // api.github.com and personal access tokens are only needed for WRITING.
+  var gistId = String(config.gistId || "").trim();
+  if (!/^[a-f0-9]{5,64}$/i.test(gistId)) throw new Error("Введите правильный ID публичного Gist.");
+
+  async function anonFetch(url, options) {
+    var controller = new AbortController();
+    var timedOut = false;
+    syncRuntime.controllers.add(controller);
+    var timer = setTimeout(function () { timedOut = true; controller.abort(); }, 20000);
+    try {
+      var response = await fetch(url, Object.assign({ method: "GET", signal: controller.signal, cache: "no-store" }, options || {}));
+      var body = await response.text();
+      syncCheckGeneration(config);
+      return { ok: response.ok, status: response.status, headers: response.headers, text: body };
+    } catch (error) {
+      syncCheckGeneration(config);
+      if (timedOut) throw new Error("GitHub не ответил за 20 секунд. Данные остались на устройстве.");
+      if (!error.message) error.message = "Браузер не смог получить данные с GitHub. Проверьте подключение к сети и ID Gist.";
+      throw error;
+    } finally {
+      clearTimeout(timer); syncRuntime.controllers.delete(controller);
+    }
   }
+
+  // Step 1: collect candidate file names from any GitHub page we can reach.
+  function harvestNames(html) {
+    var found = [];
+    var patterns = [
+      /href="\/[^"\/]+\/(?:[a-f0-9]{5,64})\/raw\/(?:[^"?#\s"]+\/)?([^"?#\s"]+)"/gi,
+      /gist\.githubusercontent\.com\/[^/"']+\/[a-f0-9]{5,64}\/(?:raw|blob)\/[^"'?\s]+\/([^"'?#\s]+\.json)/gi
+    ];
+    for (var pi = 0; pi < patterns.length; pi++) {
+      var match;
+      while ((match = patterns[pi].exec(html)) !== null) {
+        var name;
+        try { name = decodeURIComponent(match[1]); } catch (error) { name = match[1]; }
+        name = name.replace(/[#?].*$/, "");
+        if ((name === GIST_FILENAME || /^attendance\.device\.[a-zA-Z0-9_.-]+\.json$/.test(name)) && found.indexOf(name) === -1) found.push(name);
+      }
+    }
+    return found;
+  }
+  var names = [];
+  var embedResponse = await anonFetch("https://gist.github.com/" + encodeURIComponent(gistId) + "/embed", {});
+  if (embedResponse.ok) names = harvestNames(embedResponse.text);
+  // Step 2: fallback — resolve the owner login via the redirect Location header.
+  if (!names.length) {
+    try {
+      var redirectResponse = await anonFetch("https://gist.github.com/" + encodeURIComponent(gistId), { redirect: "manual" });
+      var location = redirectResponse.headers && typeof redirectResponse.headers.get === "function" ? redirectResponse.headers.get("location") : "";
+      // The browser resolves relative Locations against the request URL, so do the same here.
+      var absoluteLocation = "";
+      if (location) { try { absoluteLocation = new URL(location, "https://gist.github.com/").href; } catch (error) { absoluteLocation = ""; } }
+      var ownerMatch = absoluteLocation.match(/^https:\/\/gist\.github\.com\/([^/?#\s]+)\/([a-f0-9]{5,64})(?:[/?#].*)?$/i);
+      if (ownerMatch && ownerMatch[1] !== "login") {
+        var pageResponse = await anonFetch("https://gist.github.com/" + encodeURIComponent(ownerMatch[1]) + "/" + encodeURIComponent(gistId), {});
+        if (pageResponse.ok) names = harvestNames(pageResponse.text);
+      }
+    } catch (error) { /* keep the empty list; the friendly message below explains it */ }
+  }
+  // Step 3: download every journal file straight from the CORS-open raw host.
+  var result = {};
+  for (var ni = 0; ni < names.length; ni++) {
+    var fileName = names[ni];
+    var rawResponse = await anonFetch("https://gist.githubusercontent.com/" + encodeURIComponent(gistId) + "/raw/" + encodeURIComponent(fileName), {});
+    if (!rawResponse.ok) {
+      throw new Error("Не удалось скачать файл «" + fileName + "» из публичного Gist (код " + rawResponse.status + "). Проверьте, что Gist публичный.");
+    }
+    result[fileName] = { content: rawResponse.text, truncated: false, raw_url: "" };
+  }
+  if (!Object.keys(result).length) {
+    throw new Error("Не удалось найти файлы журнала в публичном Gist. Убедитесь, что синхронизация с этим Gist уже выполнялась с токеном (например, кнопкой «Отправить изменения»), или введите токен для непубличного Gist.");
+  }
+  return result;
 }
 async function syncFetch(url, options, config) {
   syncCheckGeneration(config);
@@ -3856,7 +3896,7 @@ function updateSyncUI() {
   var configured = syncConfigured(), readOnly = syncReadOnly();
   if (dom.gistPublicCheckbox) dom.gistPublicCheckbox.checked = Boolean(syncConfig.isPublicGist);
   if (dom.publicGistWarning) dom.publicGistWarning.hidden = !syncConfig.isPublicGist;
-  if (!configured) setSyncStatus("off", syncConfig.enabled && syncConfig.gistId ? "Введите токен ещё раз" : "На этом устройстве");
+  if (!configured) setSyncStatus("off", syncConfig.enabled && syncConfig.gistId ? "Нет доступа к Gist — проверьте ID или добавьте токен" : "На этом устройстве");
   else if (readOnly) setSyncStatus("paused", "Публичный Gist · только чтение");
   else if (!syncOnline()) setSyncStatus("paused", "Нет сети · сохранено локально");
   else if (syncRuntime.isSyncing) setSyncStatus("busy", "Синхронизация…");
@@ -4073,8 +4113,10 @@ function extractGistId(input) {
   return match ? match[1] : value;
 }
 function syncInputConfig() {
+  // Token is OPTIONAL everywhere: with only a Gist ID the journal opens in
+  // read-only mode from a public Gist — no personal access token required.
   var token = dom.githubToken.value.trim(); var gistId = extractGistId(dom.gistId.value);
-  if (!/^[a-f0-9]{5,64}$/i.test(gistId) || /[\r\n]/.test(token)) throw new Error("Введите правильный ID Gist" + (token ? "" : " (или токен для записи в непубличный Gist)"));
+  if (!/^[a-f0-9]{5,64}$/i.test(gistId) || /[\r\n]/.test(token)) throw new Error("Введите правильный ID Gist (ссылку на публичный Gist тоже можно вставить целиком).");
   return syncOperationConfig(token, gistId);
 }
 function syncListen(element, event, handler) { if (element) element.addEventListener(event, handler); }
@@ -4094,10 +4136,11 @@ syncListen(dom.saveSyncConfigButton, "click", async function () {
   try {
     var result = await fetchFromGist(proposed, { unconditional: true, noCache: true });
     syncCheckGeneration(proposed);
-    // No token: anonymous read works only for public Gists, so require the
-    // explicit checkbox to avoid confusing 404s on secret Gists.
+    // No token is fine: the Gist must simply be public — anonymous read works
+    // from any domain through gist.githubusercontent.com (CORS-open). The
+    // checkbox only confirms the user intends to share data publicly.
     if (!proposed.token && !syncFormPublicFlag()) {
-      throw new Error("Отметьте «Публичный Gist», чтобы открыть журнал в режиме «только чтение» без токена, или укажите токен для синхронизации.");
+      throw new Error("Для работы без токена Gist должен быть публичным: отметьте «Публичный Gist». Для отправки изменений в непубличный Gist укажите токен.");
     }
     syncInvalidate();
     syncConfig.token = proposed.token; syncConfig.gistId = proposed.gistId; syncConfig.enabled = true;
@@ -4161,7 +4204,7 @@ function renderSyncOverview(){
   if(!syncConfigured()){
     title=syncConfig.enabled&&syncConfig.gistId?"Подключение приостановлено":"Только на этом устройстве";
     detail=syncConfig.enabled&&syncConfig.gistId?"Введите токен в подключении — изменения остаются в очереди.":"Для обмена отметками подключите один и тот же Gist на всех устройствах.";
-  }else if(syncReadOnly()){title="Публичный Gist · только чтение";detail="Журнал загружается с GitHub без токена. Правки сохраняются только на этом устройстве; для отправки добавьте токен.";}
+  }else if(syncReadOnly()){title="Публичный Gist · только чтение";detail="Журнал загружается с GitHub без токена — вход открыт с любого домена. Правки сохраняются только на этом устройстве; токен нужен лишь для отправки изменений.";}
   else if(conflictCount){title="Нужно выбрать версии записей";detail="Конфликтов: "+conflictCount+". Откройте очередь ниже.";}
   else if(!syncOnline()){title="Без интернета";detail="Изменения сохранены здесь. В очереди: "+count+".";}
   else if(syncRuntime.isSyncing){title="Проверяем изменения…";detail="В очереди: "+count+". Можно продолжать работу.";}
