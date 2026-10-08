@@ -3069,7 +3069,7 @@ function refreshDevPanel() {
 }
 function openDevPanel() { if (!state.devUnlocked) { openPasswordModal(); return; } refreshDevPanel(); renderMaintenance(); openModal(dom.devPanelModal, dom.devVersionTextInput); }
 function collapseDevPanel() { closeModal(); renderMaintenance(); }
-function exitDevSettings() { state.devUnlocked = false; try { if (storage) storage.removeItem(SETTINGS_UNLOCK_KEY); } catch (error) {} closeModal(); renderMaintenance(); showToast("Вы вышли из настроек. Для возврата потребуется код доступа.", "info"); }
+function exitDevSettings() { state.devUnlocked = false; try { if (storage) storage.removeItem(SETTINGS_UNLOCK_KEY); } catch (error) {} closeModal(); renderMaintenance(); if (dom.journalEdition) dom.journalEdition.textContent = settingsVersionText(); showToast("Вы вышли из настроек. Для возврата потребуется код доступа.", "info"); }
 // The small gray label above the site title follows the access code: while a
 // personal code is set on this device, the edition shows its installation date.
 function settingsCodeInstalled() {
@@ -3250,7 +3250,8 @@ function submitSettingsCode(event) {
   if (dom.settingsPasswordInput.value !== SETTINGS_ACCESS_CODE) { dom.settingsPasswordError.textContent = "Неверный код. Попробуйте ещё раз."; dom.settingsPasswordInput.setAttribute("aria-invalid", "true"); dom.settingsPasswordInput.value = ""; dom.settingsPasswordInput.focus(); return; }
   closePasswordModal(); state.devUnlocked = true;
   // The unlock survives tab closures until "Выйти из настроек" is pressed.
-  try { if (storage) storage.setItem(SETTINGS_UNLOCK_KEY, "1"); } catch (error) {}
+  try { if (storage) { storage.setItem(SETTINGS_UNLOCK_KEY, "1"); storage.setItem(SETTINGS_CODE_SET_KEY, String(Date.now())); } } catch (error) {}
+  if (dom.journalEdition) dom.journalEdition.textContent = settingsVersionText();
   openDevPanel();
 }
 
