@@ -2212,6 +2212,10 @@ input[type="date"]:focus { outline: none; border-color: var(--primary); box-shad
 .project-form { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; margin:18px 0; }.project-form label { display:flex;flex-direction:column;gap:7px;font-size:12px;color:var(--muted); }
 .project-form input,.project-form select { width:100%;min-width:0;max-width:100%;font:inherit;min-height:44px;border:1px solid var(--border);border-radius:8px;padding:0 10px;background:var(--surface-1);color:var(--text-strong);box-sizing:border-box; }
 .lessons-panel { margin-top:24px; }.lessons-panel > summary { display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;list-style:none;padding:20px 24px; }.lessons-panel > summary h2 { margin:0;font-size:18px; }.lessons-panel > summary span { color:var(--muted);font-size:12px; }.project-panel-body { padding:0 24px 22px; }.lesson-list { display:grid;gap:10px;margin-top:18px; }.lesson-list-item { text-align:left;justify-content:flex-start;white-space:normal;height:auto;padding:13px 15px; }
+.hw-class-name { display:block;margin-top:6px;font-size:14px;color:var(--text-strong); }
+#hwText { width:100%;margin-top:12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--card);color:var(--text-strong);padding:12px 14px;font:inherit;resize:vertical;min-height:74px; }
+.hw-pinned { display:flex;align-items:flex-start;justify-content:space-between;gap:12px;border:1px solid var(--border);border-radius:var(--radius-sm);padding:13px 15px;margin-top:14px;background:var(--warning-soft);white-space:pre-wrap;word-break:break-word;line-height:1.55;font-size:14px; }
+.hw-pinned .hw-pin-meta { font-size:11px;color:var(--muted);white-space:nowrap;flex-shrink:0; }
 .project-modal { max-width:720px; }.report-modal { max-width:1050px; }.project-modal-head { display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:16px; }.project-modal h3 { border:0;padding:0;margin:0;overflow-wrap:anywhere; }.field-label { display:block;margin:10px 0;font-size:12px;color:var(--muted); }.lesson-roster-row { display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid var(--border);padding:12px 0;font-size:14px; }.lesson-roster-row span { overflow-wrap:anywhere; }.lesson-roster-row select { max-width:160px;flex-shrink:0; }
 .report-summary { border-radius:12px;background:var(--primary-soft);color:var(--primary);padding:16px;line-height:1.7;margin:18px 0;font-size:14px; }.report-table-wrap { overflow:auto;border:1px solid var(--border);border-radius:10px;max-height:360px; }.report-table { width:100%;min-width:620px;table-layout:auto; }.report-table th,.report-table td { padding:12px 14px;font-size:12px;text-align:right;height:auto;min-width:0;white-space:normal; }.report-table th:first-child,.report-table td:first-child { text-align:left;min-width:180px; }.report-table th { position:sticky;top:0;background:var(--surface-1); }.report-table td { background:var(--card); }.report-table td:first-child { overflow-wrap:anywhere; }
 @media(max-width:700px){.project-form { grid-template-columns:repeat(2,minmax(0,1fr)); }.project-panel-body { padding:0 14px 18px; }.lessons-panel > summary { padding:18px 14px; }.lessons-panel > summary span { display:none; }.offline-panel summary { gap:8px;font-size:11px; }.offline-panel summary span:last-child { flex-basis:100%; }.lesson-roster-row { gap:8px; }.lesson-roster-row select { max-width:140px; }.report-modal { padding:18px 14px; }.report-filters { gap:10px; }.report-modal .modal-actions { flex-wrap:wrap; }}
@@ -2612,7 +2616,7 @@ input[type="date"]:focus { outline: none; border-color: var(--primary); box-shad
 @media print{.mobile-add-student{display:none!important}}
 </style></head>
 <body><main class="container" id="journalApp">
-<nav id="glassNavigation" class="glass-navigation" aria-label="Разделы журнала"><div class="nav-wordmark"><svg class="glass-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h6a3 3 0 0 1 3 3v14a4 4 0 0 0-4-2H3zM21 4h-6a3 3 0 0 0-3 3v14a4 4 0 0 1 4-2h5z"/></svg><span>Журнал</span></div><div class="nav-items"><button type="button" class="nav-item secondary is-active" data-nav="journal" aria-label="Журнал" aria-current="location"><svg class="glass-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h6a3 3 0 0 1 3 3v14a4 4 0 0 0-4-2H3zM21 4h-6a3 3 0 0 0-3 3v14a4 4 0 0 1 4-2h5z"/></svg><span>Журнал</span></button><button type="button" class="nav-item secondary" data-nav="students" aria-label="Ученики"><svg class="glass-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 20v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6M21 20v-3a5 5 0 0 0-3-4"/></svg><span>Ученики</span></button><button type="button" class="nav-item secondary" data-nav="lessons" aria-label="Занятия"><svg class="glass-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4M17 3v4M3 11h18M8 15h2M14 15h2"/></svg><span>Занятия</span></button><button type="button" class="nav-item secondary" data-nav="reports" aria-label="Отчёты"><svg class="glass-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 20v-7M12 20V8M19 20V3" stroke-width="3"/></svg><span>Отчёты</span></button><button type="button" class="nav-item secondary" data-nav="settings" aria-label="Настройки"><svg class="glass-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 3-1 3-3 1-2 3 2 2v3l3 1 2 3h3l1-3 3-1 2-3-2-2V7l-3-1-2-3z"/><circle cx="12" cy="11" r="3"/></svg><span>Настройки</span></button></div><div class="nav-footnote">Ваш класс.<br>Всё под рукой.</div></nav>
+<nav id="glassNavigation" class="glass-navigation" aria-label="Разделы журнала"><div class="nav-wordmark"><svg class="glass-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h6a3 3 0 0 1 3 3v14a4 4 0 0 0-4-2H3zM21 4h-6a3 3 0 0 0-3 3v14a4 4 0 0 1 4-2h5z"/></svg><span>Журнал</span></div><div class="nav-items"><button type="button" class="nav-item secondary is-active" data-nav="journal" aria-label="Журнал" aria-current="location"><svg class="glass-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h6a3 3 0 0 1 3 3v14a4 4 0 0 0-4-2H3zM21 4h-6a3 3 0 0 0-3 3v14a4 4 0 0 1 4-2h5z"/></svg><span>Журнал</span></button><button type="button" class="nav-item secondary" data-nav="students" aria-label="Ученики"><svg class="glass-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 20v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6M21 20v-3a5 5 0 0 0-3-4"/></svg><span>Ученики</span></button><button type="button" class="nav-item secondary" data-nav="homework" aria-label="Домашние задания"><svg class="glass-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4M17 3v4M3 11h18M8 15h2M14 15h2"/></svg><span>Домашка</span></button><button type="button" class="nav-item secondary" data-nav="reports" aria-label="Отчёты"><svg class="glass-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 20v-7M12 20V8M19 20V3" stroke-width="3"/></svg><span>Отчёты</span></button><button type="button" class="nav-item secondary" data-nav="settings" aria-label="Настройки"><svg class="glass-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 3-1 3-3 1-2 3 2 2v3l3 1 2 3h3l1-3 3-1 2-3-2-2V7l-3-1-2-3z"/><circle cx="12" cy="11" r="3"/></svg><span>Настройки</span></button></div><div class="nav-footnote">Ваш класс.<br>Всё под рукой.</div></nav>
 <div class="journal-content">
   <header class="page-header">
     <div class="page-header-text">
@@ -2667,7 +2671,7 @@ input[type="date"]:focus { outline: none; border-color: var(--primary); box-shad
   <span id="printMonthTitle" hidden></span>
   <details id="offlineDetails" class="offline-panel"><summary><span id="offlineStatus" role="status">Изменения сохранены</span><span>В очереди: <b id="queueCount">0</b></span><span>Последняя синхронизация: <time id="lastSyncTime">ещё не было</time></span></summary><div class="offline-content"><p class="help-text">Повторные правки одной записи объединяются. Автоматическая отправка после восстановления связи работает при подключённой синхронизации и выбранном интервале обновления.</p><div id="conflictList"></div><ul id="queueList" class="queue-list"></ul></div></details>
 
-  <details id="lessonsPanel" class="panel lessons-panel" open><summary><h2>Занятия по предметам</h2><span>Отметки для отчётов</span></summary><div class="project-panel-body"><p class="help-text">Добавьте предмет и занятие, затем отметьте учеников. Дневные отметки выше хранятся отдельно: у них нет предмета и они не входят в эти отчёты.</p><div class="project-form"><label>Дата<input id="lessonDate" type="date"></label><label>Предмет<select id="lessonSubject"></select></label><label>Окончание<input id="lessonEnd" type="time" value="14:00"></label><label>Статус<select id="lessonStatus"><option value="planned">Запланировано</option><option value="held">Проведено</option><option value="cancelled">Отменено</option></select></label></div><div class="row-actions"><button id="lessonCreate" type="button">Добавить занятие</button><button id="addSubjectButton" class="secondary" type="button">+ Предмет</button></div><div id="lessonList" class="lesson-list"></div></div></details>
+  <details id="hwPanel" class="panel lessons-panel" open><summary><h2>Домашние задания</h2><span>Крепится отдельно для каждого класса</span></summary><div class="project-panel-body"><p class="help-text">Текст домашнего задания индивидуален для каждого класса: переключите класс в журнале — панель покажет задание этого класса. Предмет указывать не нужно; задание остаётся закреплённым, пока его не заменят новым или не уберут.</p><div class="project-form"><label>Дата выдачи<input id="hwDate" type="date"></label><label>Класс<strong id="hwClassName" class="hw-class-name"></strong></label></div><textarea id="hwText" rows="3" maxlength="4000" placeholder="Напишите домашнее задание для этого класса…"></textarea><div class="row-actions"><button id="hwPinButton" type="button">Закрепить домашнее задание</button><button id="hwClearButton" class="secondary" type="button">Убрать задание</button></div><div id="hwHistory" class="lesson-list"></div></div></details>
   <details class="sync-panel panel">
     <summary class="sync-summary"><div class="sync-header"><div><h2>Синхронизация устройств</h2><p>Локальное сохранение работает и без подключения</p></div><span id="syncStatus" class="sync-status off" role="status"><span class="status-dot" aria-hidden="true"></span><span id="syncStatusText">На этом устройстве</span></span></div></summary>
     <div class="sync-content">
@@ -2730,14 +2734,13 @@ input[type="date"]:focus { outline: none; border-color: var(--primary); box-shad
     <div class="dev-section"><label for="devNewsInput">Объявление для класса</label><textarea id="devNewsInput" placeholder="Напишите важное сообщение…" maxlength="4000"></textarea><div class="row-actions"><button id="devSaveNewsButton" type="button">Сохранить объявление</button><button id="devClearNewsButton" class="secondary" type="button">Очистить</button></div></div>
     <div class="dev-section"><label for="devMaintenanceMessageInput">Экран обслуживания</label><p class="help-text">Информационное сообщение на остальных устройствах. Управление настройками остаётся доступным.</p><textarea id="devMaintenanceMessageInput" maxlength="2000"></textarea><div class="row-actions"><button id="devSaveMaintenanceMessageButton" class="secondary" type="button">Сохранить сообщение</button><button id="devResetMaintenanceMessageButton" class="secondary" type="button">По умолчанию</button><button id="devToggleMaintenanceButton" class="secondary" type="button">Включить экран обслуживания</button></div></div>
     <div class="dev-section"><label>Резервные копии</label><p class="help-text">Копии содержат учеников, отметки и настройки. Перед заменой данных сохраняются три последние версии.</p><div class="row-actions"><button id="importBackupButton" class="secondary" type="button">Загрузить копию</button><button id="restoreBackupButton" class="secondary" type="button">Восстановить последнюю</button><input id="importBackupInput" type="file" accept="application/json,.json" hidden></div></div>
-    <div class="modal-actions"><button id="devCloseButton" type="button">Готово</button></div>
+    <div class="modal-actions"><button id="devExitButton" class="danger" type="button">Выйти из настроек</button><button id="devCloseButton" class="secondary" type="button">Свернуть</button></div>
   </div>
 </div>
 
 <div id="maintenanceOverlay" class="maintenance-overlay" role="dialog" aria-modal="true" aria-labelledby="maintenanceTitle"><div class="maintenance-content"><div class="maintenance-icon" aria-hidden="true">◷</div><h2 id="maintenanceTitle">Журнал на обслуживании</h2><p id="maintenanceMessageText"></p><button id="maintenanceDevAccessButton" class="secondary" type="button">Открыть настройки</button></div></div>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<div id="lessonModal" class="modal-backdrop"><div class="modal project-modal" role="dialog" aria-modal="true" aria-labelledby="lessonTitle"><div class="project-modal-head"><div><p class="eyebrow">Посещаемость занятия</p><h3 id="lessonTitle"></h3></div><button id="lessonClose" class="secondary icon-button" type="button" aria-label="Закрыть занятие">×</button></div><label class="field-label" for="lessonState">Статус занятия</label><select id="lessonState"><option value="planned">Запланировано</option><option value="held">Проведено</option><option value="cancelled">Отменено</option></select><p class="help-text">В отчёт входят проведённые занятия после указанного времени окончания. Состав класса сохранён на момент создания занятия.</p><div id="lessonRoster"></div><div class="modal-actions"><button id="lessonDelete" class="danger" type="button">Удалить занятие</button></div></div></div>
 <div id="reportsModal" class="modal-backdrop"><div class="modal project-modal report-modal" role="dialog" aria-modal="true" aria-labelledby="reportsTitle"><div class="project-modal-head"><div><p class="eyebrow">Итоги посещаемости</p><h3 id="reportsTitle">Отчёты</h3></div><button id="reportsClose" class="secondary icon-button" type="button" aria-label="Закрыть отчёты">×</button></div><div class="project-form report-filters"><label>Учебный год с сентября<input id="reportYear" type="number" min="1000" max="9998"></label><label>Период<select id="reportQuarter"><option value="1">I четверть · сентябрь–октябрь</option><option value="2">II четверть · ноябрь–декабрь</option><option value="3">III четверть · январь–март</option><option value="4">IV четверть · апрель–май</option><option value="custom">Свой период</option></select></label><label>С даты<input id="reportStart" type="date"></label><label>По дату включительно<input id="reportEnd" type="date"></label><label>Класс<select id="reportClass"></select></label><label>Предмет<select id="reportSubject"></select></label><label>Ученик<select id="reportStudent"></select></label><label>Показать итоги<select id="reportGroup"><option value="students">По ученикам</option><option value="classes">По классам</option><option value="subjects">По предметам</option></select></label></div><p class="help-text">Границы четверти примерные — измените даты под календарь школы. Процент = (присутствия + опоздания) / все заполненные отметки проведённых занятий. Будущие, запланированные, отменённые занятия и пустые отметки исключены.</p><div id="reportSummary" class="report-summary" role="status"></div><div class="report-table-wrap"><table class="report-table"><thead><tr><th>Имя / название</th><th>Был</th><th>Опоздал</th><th>Пропустил</th><th>Отмечено</th><th>Посещаемость</th></tr></thead><tbody id="reportRows"></tbody></table></div><p id="reportNote" class="help-text"></p><div class="modal-actions"><button id="reportExcel" type="button">Скачать Excel</button><button id="reportPDF" class="secondary" type="button">Скачать PDF</button></div></div></div>
 
 <script>/*!
@@ -2778,6 +2781,8 @@ var DEVICE_ID_KEY = "attendance_device_id";
 var INTERVAL_KEY = "attendance_poll_interval";
 var GIST_FILENAME = "attendance.json";
 var DEFAULT_POLL_INTERVAL_MS = 5000, PUSH_DEBOUNCE_MS = 400;
+var SETTINGS_UNLOCK_KEY = "attendance_settings_unlocked";
+var SETTINGS_CODE_SET_KEY = "attendance_settings_code_set";
 var BACKUP_KEY = "attendance_recovery_backups";
 var NEWS_DISMISS_KEY = "attendance_news_dismissed";
 var DEFAULT_VERSION_TEXT = "версия: 3.3";
@@ -2793,7 +2798,7 @@ var syncConfig = { enabled: false, token: "", gistId: "", isPublicGist: false, l
 var deviceId = "", logicalTime = 0, activeModal = null, previousFocus = null, modalStack = [];
 var attendanceModalState = { open: false, studentId: "", dateKey: "", currentStatus: STATUS_UNMARKED };
 var dom = {};
-["studentName", "addStudentButton", "monthPicker", "previousMonthButton", "nextMonthButton", "todayButton", "monthTitle", "tableHead", "tableBody", "emptyMessage", "searchInput", "clearSearchButton", "searchResultsInfo", "noSearchResults", "toast", "syncStatus", "syncStatusText", "toggleSyncConfigButton", "syncConfig", "githubToken", "gistId", "gistPublicCheckbox", "publicGistWarning", "saveSyncConfigButton", "testConnectionButton", "disableSyncButton", "syncNowButton", "forcePushButton", "forcePullButton", "debugButton", "refreshDebugButton", "copyDebugButton", "debugBlock", "debugPre", "intervalSelect", "newsBanner", "newsText", "newsCloseButton", "versionButton", "versionButtonText", "journalEdition", "devPanelModal", "devCloseButton", "devVersionTextInput", "devSaveVersionTextButton", "devResetVersionTextButton", "devToggleMaintenanceButton", "devMaintenanceMessageInput", "devSaveMaintenanceMessageButton", "devResetMaintenanceMessageButton", "devNewsInput", "devSaveNewsButton", "devClearNewsButton", "maintenanceOverlay", "maintenanceMessageText", "maintenanceActiveBadge", "maintenanceDevAccessButton", "attendanceModal", "attCloseButton", "attStudentName", "attDateText", "attOptions", "localSaveStatus", "exportBackupButton", "importBackupButton", "importBackupInput", "restoreBackupButton", "printButton", "summaryStudents", "summaryPresent", "summaryAbsent", "summaryLate", "coverageInfo", "journalApp", "printMonthTitle"].forEach(function (id) { dom[id] = document.getElementById(id); });
+["studentName", "addStudentButton", "monthPicker", "previousMonthButton", "nextMonthButton", "todayButton", "monthTitle", "tableHead", "tableBody", "emptyMessage", "searchInput", "clearSearchButton", "searchResultsInfo", "noSearchResults", "toast", "syncStatus", "syncStatusText", "toggleSyncConfigButton", "syncConfig", "githubToken", "gistId", "gistPublicCheckbox", "publicGistWarning", "saveSyncConfigButton", "testConnectionButton", "disableSyncButton", "syncNowButton", "forcePushButton", "forcePullButton", "debugButton", "refreshDebugButton", "copyDebugButton", "debugBlock", "debugPre", "intervalSelect", "newsBanner", "newsText", "newsCloseButton", "versionButton", "versionButtonText", "journalEdition", "devPanelModal", "devCloseButton", "devExitButton", "devVersionTextInput", "devSaveVersionTextButton", "devResetVersionTextButton", "devToggleMaintenanceButton", "devMaintenanceMessageInput", "devSaveMaintenanceMessageButton", "devResetMaintenanceMessageButton", "devNewsInput", "devSaveNewsButton", "devClearNewsButton", "maintenanceOverlay", "maintenanceMessageText", "maintenanceActiveBadge", "maintenanceDevAccessButton", "attendanceModal", "attCloseButton", "attStudentName", "attDateText", "attOptions", "localSaveStatus", "exportBackupButton", "importBackupButton", "importBackupInput", "restoreBackupButton", "printButton", "summaryStudents", "summaryPresent", "summaryAbsent", "summaryLate", "coverageInfo", "journalApp", "printMonthTitle"].forEach(function (id) { dom[id] = document.getElementById(id); });
 dom.studentNameInput = dom.studentName;
 var storage = accessibleStorage("localStorage"), sessStorage = accessibleStorage("sessionStorage");
 
@@ -3057,7 +3062,7 @@ function render() {
   renderViewControls(days); dom.printMonthTitle.textContent = dom.monthTitle.textContent;
   renderHeader(days); renderBody(days); renderSummary(days); renderStudentCard();
   dom.searchResultsInfo.textContent = state.searchQuery.trim() ? "Найдено " + getFilteredStudents().length + " из " + getVisibleStudents().length : "Всего " + getVisibleStudents().length;
-  dom.clearSearchButton.hidden = !state.searchQuery; dom.versionButtonText.textContent = state.settings.versionText; dom.versionButton.setAttribute("aria-label", state.settings.versionText + ". Открыть настройки по коду"); if (dom.journalEdition) dom.journalEdition.textContent = "v" + APP_VERSION; renderNews(); renderMaintenance(); renderProject(); renderOffline();
+  dom.clearSearchButton.hidden = !state.searchQuery; dom.versionButtonText.textContent = state.settings.versionText; dom.versionButton.setAttribute("aria-label", state.settings.versionText + ". Открыть настройки по коду"); if (dom.journalEdition) dom.journalEdition.textContent = settingsVersionText(); renderNews(); renderMaintenance(); renderHomework(); renderOffline();
   if (!activeModal && focused && focused.dataset && focused.dataset.dateKey && !focused.isConnected) { var replacement = document.querySelector('.attendance-button[data-student-id="' + focused.dataset.studentId + '"][data-date-key="' + focused.dataset.dateKey + '"]'); if (replacement) replacement.focus(); }
 }
 function refreshDevPanel() {
@@ -3066,7 +3071,23 @@ function refreshDevPanel() {
   dom.devToggleMaintenanceButton.className = state.settings.maintenance ? "danger" : "secondary";
 }
 function openDevPanel() { if (!state.devUnlocked) { openPasswordModal(); return; } refreshDevPanel(); renderMaintenance(); openModal(dom.devPanelModal, dom.devVersionTextInput); }
-function closeDevPanel() { state.devUnlocked = false; closeModal(); renderMaintenance(); }
+function collapseDevPanel() { closeModal(); renderMaintenance(); }
+function exitDevSettings() { state.devUnlocked = false; try { if (storage) storage.removeItem(SETTINGS_UNLOCK_KEY); } catch (error) {} closeModal(); renderMaintenance(); if (dom.journalEdition) dom.journalEdition.textContent = settingsVersionText(); showToast("Вы вышли из настроек. Для возврата потребуется код доступа.", "info"); }
+// The small gray label above the site title follows the access code: while a
+// personal code is set on this device, the edition shows its installation date.
+function settingsCodeInstalled() {
+  try { if (storage && storage.getItem(SETTINGS_CODE_SET_KEY)) return true; } catch (error) {}
+  return SETTINGS_ACCESS_CODE !== DEFAULT_SETTINGS_ACCESS_CODE;
+}
+function settingsEditionText() {
+  var stamp = null;
+  try { stamp = Number(storage && storage.getItem(SETTINGS_CODE_SET_KEY)) || null; } catch (error) {}
+  if (!(stamp > 0)) return "v" + APP_VERSION;
+  var d = new Date(stamp);
+  var pad = function (n) { return String(n).length < 2 ? "0" + n : String(n); };
+  return "v" + d.getFullYear() + "." + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+}
+function settingsVersionText() { return "Версия " + settingsEditionText(); }
 function renderDebug() { dom.debugPre.textContent = JSON.stringify({ version: 5, deviceId: deviceId, revision: state.revision, pending: syncRuntime.hasPendingChanges, syncing: syncRuntime.isSyncing, lastError: syncConfig.lastError, students: getVisibleStudents().length, attendance: Object.keys(state.attendance).length, gistId: syncConfig.gistId || null }, null, 2); }
 function exportBackup() {
   var payload = buildPayload(); payload.exportedAt = new Date().toISOString();
@@ -3098,8 +3119,8 @@ function wireCoreEvents() {
   dom.attCloseButton.addEventListener("click", closeAttendanceModal);
   dom.attOptions.addEventListener("click", function (e) { var btn = e.target.closest("[data-status]"); if (btn) setAttendanceStatus(btn.dataset.status); });
   dom.attendanceModal.addEventListener("click", function (e) { if (e.target === dom.attendanceModal) closeAttendanceModal(); });
-  dom.versionButton.addEventListener("click", openDevPanel); dom.maintenanceDevAccessButton.addEventListener("click", openDevPanel); dom.devCloseButton.addEventListener("click", closeDevPanel);
-  dom.devPanelModal.addEventListener("click", function (e) { if (e.target === dom.devPanelModal) closeDevPanel(); });
+  dom.versionButton.addEventListener("click", openDevPanel); dom.maintenanceDevAccessButton.addEventListener("click", openDevPanel); dom.devCloseButton.addEventListener("click", collapseDevPanel); dom.devExitButton.addEventListener("click", exitDevSettings);
+  dom.devPanelModal.addEventListener("click", function (e) { if (e.target === dom.devPanelModal) collapseDevPanel(); });
   dom.devSaveVersionTextButton.addEventListener("click", function () { var text = dom.devVersionTextInput.value.trim(); if (!text) return showToast("Введите подпись журнала", "warning"); updateSettings({ versionText: text.slice(0, 60) }); showToast("Подпись сохранена", "success"); });
   dom.devResetVersionTextButton.addEventListener("click", function () { updateSettings({ versionText: DEFAULT_VERSION_TEXT }); refreshDevPanel(); });
   dom.devToggleMaintenanceButton.addEventListener("click", function () { var enabled = !state.settings.maintenance; updateSettings({ maintenance: enabled, maintenanceBy: enabled ? deviceId : "" }); refreshDevPanel(); });
@@ -3118,7 +3139,7 @@ function wireCoreEvents() {
   dom.copyDebugButton.addEventListener("click", async function () { try { await navigator.clipboard.writeText(dom.debugPre.textContent); showToast("Диагностика скопирована", "success"); } catch (e) { showToast("Не удалось скопировать. Выделите текст вручную.", "warning"); } });
   document.addEventListener("keydown", function (e) {
     if (activeModal && e.key === "Tab") { var items = modalFocusables(), first = items[0], last = items[items.length - 1]; if (!items.length) return e.preventDefault(); if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); } else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); } }
-    if (e.key === "Escape" && activeModal) { e.preventDefault(); if (attendanceModalState.open) closeAttendanceModal(); else if (activeModal === dom.settingsPasswordModal) closePasswordModal(); else if (activeModal === dom.studentCardModal) closeStudentCard(); else if (activeModal === dom.devPanelModal) closeDevPanel(); else closeModal(); }
+    if (e.key === "Escape" && activeModal) { e.preventDefault(); if (attendanceModalState.open) closeAttendanceModal(); else if (activeModal === dom.settingsPasswordModal) closePasswordModal(); else if (activeModal === dom.studentCardModal) closeStudentCard(); else if (activeModal === dom.devPanelModal) collapseDevPanel(); else closeModal(); }
     if (attendanceModalState.open && !e.ctrlKey && !e.metaKey && !e.altKey) { var statuses = { "1": STATUS_PRESENT, "2": STATUS_ABSENT, "3": STATUS_LATE, "0": STATUS_UNMARKED }; if (statuses[e.key]) { e.preventDefault(); setAttendanceStatus(statuses[e.key]); } }
   });
   window.addEventListener("storage", function (e) {
@@ -3137,7 +3158,11 @@ function wireCoreEvents() {
 function init() {
   deviceId = getDeviceId(); var loaded = loadLocal(); loadSyncConfig(); loadInterval();
   try { if (dom.githubToken) dom.githubToken.value = syncConfig.token; if (dom.gistId) dom.gistId.value = syncConfig.gistId; if (dom.gistPublicCheckbox) dom.gistPublicCheckbox.checked = Boolean(syncConfig.isPublicGist); } catch (error) {}
-  if (loaded && storage) { saveLocal(); try { storage.removeItem("attendance_dev_unlocked"); } catch (error) {} }
+  if (loaded && storage) { saveLocal(); }
+  // The settings unlock flag is restored from localStorage below; only the
+  // obsolete per-session flag from earlier builds is cleaned up here.
+  try { if (sessStorage) sessStorage.removeItem("attendance_dev_unlocked"); } catch (error) {}
+  try { if (!state.devUnlocked && storage && storage.getItem(SETTINGS_UNLOCK_KEY) === "1") state.devUnlocked = true; } catch (error) {}
   if (!storage) updateLocalStatus("Только в этой вкладке", true);
   loadViewPreference(); dom.intervalSelect.value = String(syncRuntime.pollIntervalMs); wireCoreEvents(); wireViewEvents(); wireProjectEvents(); wireAppUpdates(); updateSyncUI(); render();
   // Read-only connection: a Gist ID without a token still downloads a public journal.
@@ -3147,7 +3172,8 @@ function init() {
 
 // Presentation preferences remain local and are excluded from the synced diary.
 var VIEW_PREFERENCE_KEY = "attendance_view_mode";
-var SETTINGS_ACCESS_CODE = "020912";
+var DEFAULT_SETTINGS_ACCESS_CODE = "020912";
+var SETTINGS_ACCESS_CODE = DEFAULT_SETTINGS_ACCESS_CODE;
 var studentCardState = { studentId: "", month: "" };
 state.selectedDate = formatDateKey(new Date());
 state.viewMode = "month";
@@ -3225,7 +3251,11 @@ function closePasswordModal() { dom.settingsPasswordInput.value = ""; dom.settin
 function submitSettingsCode(event) {
   event.preventDefault();
   if (dom.settingsPasswordInput.value !== SETTINGS_ACCESS_CODE) { dom.settingsPasswordError.textContent = "Неверный код. Попробуйте ещё раз."; dom.settingsPasswordInput.setAttribute("aria-invalid", "true"); dom.settingsPasswordInput.value = ""; dom.settingsPasswordInput.focus(); return; }
-  closePasswordModal(); state.devUnlocked = true; openDevPanel();
+  closePasswordModal(); state.devUnlocked = true;
+  // The unlock survives tab closures until "Выйти из настроек" is pressed.
+  try { if (storage) { storage.setItem(SETTINGS_UNLOCK_KEY, "1"); storage.setItem(SETTINGS_CODE_SET_KEY, String(Date.now())); } } catch (error) {}
+  if (dom.journalEdition) dom.journalEdition.textContent = settingsVersionText();
+  openDevPanel();
 }
 
 function openStudentCard(studentId) {
@@ -3264,8 +3294,8 @@ function wireViewEvents() {
     if(!["reports","settings"].includes(destination))navigation.querySelectorAll("[data-nav]").forEach(function(item){item.classList.toggle("is-active",item===button);if(item===button)item.setAttribute("aria-current","location");else item.removeAttribute("aria-current");});
     if(destination==="reports"){dom.reportsButton.click();return;}
     if(destination==="settings"){dom.versionButton.click();return;}
-    var target=destination==="lessons"?dom.lessonsPanel:document.getElementById("journalControls");
-    if(destination==="lessons")dom.lessonsPanel.open=true;
+    var target=destination==="homework"?dom.hwPanel:document.getElementById("journalControls");
+    if(destination==="homework")dom.hwPanel.open=true;
     if(target)target.scrollIntoView({behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"start"});
     if(destination==="students"){setStudentEntryOpen(true);dom.studentNameInput.focus({preventScroll:true});}
   });
@@ -3322,6 +3352,9 @@ migrateData = function(data,strict) {
       if(type==='lessons'){
         if(!validId(v.classId)||!validId(v.subjectId)||!validDate(v.date)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(v.endTime)||!['planned','held','cancelled'].includes(v.status)||!Array.isArray(v.studentIds)||v.studentIds.length>10000||v.studentIds.some(function(id){return !validId(id);})||new Set(v.studentIds).size!==v.studentIds.length)throw Error('Некорректное занятие');
         Object.assign(x,{classId:v.classId,subjectId:v.subjectId,date:v.date,endTime:v.endTime,status:v.status,studentIds:v.studentIds.slice().sort()});
+      } else if(type==='homework'){
+        if(!validId(v.classId)||!validDate(v.date)||typeof v.text!=='string'||!v.text.trim()||v.text.length>4000)throw Error('Некорректное домашнее задание');
+        Object.assign(x,{classId:v.classId,date:v.date,text:v.text});
       } else {if(typeof v.name!=='string'||!v.name.trim()||v.name.length>200)throw Error('Некорректное название');x.name=v.name.trim();}
       return x;
     });
