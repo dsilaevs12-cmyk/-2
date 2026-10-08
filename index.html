@@ -2671,12 +2671,13 @@ input[type="date"]:focus { outline: none; border-color: var(--primary); box-shad
   <details class="sync-panel panel">
     <summary class="sync-summary"><div class="sync-header"><div><h2>Синхронизация устройств</h2><p>Локальное сохранение работает и без подключения</p></div><span id="syncStatus" class="sync-status off" role="status"><span class="status-dot" aria-hidden="true"></span><span id="syncStatusText">На этом устройстве</span></span></div></summary>
     <div class="sync-content">
-      <p class="help-text">На всех устройствах укажите один и тот же ID непубличного (Secret) GitHub Gist. На новом устройстве нажмите «Сохранить подключение» — существующий журнал загрузится автоматически. Токен сохраняется в этом браузере и не сбрасывается после закрытия вкладки. Secret Gist доступен всем, у кого есть его ссылка.</p>
+      <p class="help-text">На всех устройствах укажите один и тот же ID GitHub Gist: непубличного (Secret) или публичного (Public). На новом устройстве нажмите «Сохранить подключение» — существующий журнал загрузится автоматически. Токен и ID сохраняются в этом браузере и не сбрасываются после закрытия вкладки. Secret Gist доступен всем, у кого есть его ссылка.</p>
       <div class="sync-actions"><button id="toggleSyncConfigButton" class="secondary" type="button">Подключение</button><button id="syncNowButton" type="button" disabled>Синхронизировать</button><button id="forcePushButton" class="secondary" type="button" disabled>Отправить изменения</button><button id="forcePullButton" class="secondary" type="button" disabled>Взять с сервера</button><button id="debugButton" class="secondary" type="button">Диагностика</button></div>
       <div class="interval-row"><label for="intervalSelect">Обновлять данные</label><select id="intervalSelect"><option value="0">Только вручную</option><option value="5000" selected>Каждые 5 секунд</option><option value="15000">Каждые 15 секунд</option><option value="30000">Каждые 30 секунд</option><option value="60000">Каждую минуту</option></select></div>
       <div id="syncConfig" class="sync-config">
-        <div class="field-group"><label for="githubToken">GitHub-токен</label><input id="githubToken" type="password" placeholder="Вставьте токен" autocomplete="off" spellcheck="false"><p class="help-text">Создайте <a href="https://github.com/settings/tokens/new" target="_blank" rel="noopener noreferrer">Personal Access Token</a> с правом <strong>gist</strong>. Используйте отдельный токен для журнала.</p></div>
-        <div class="field-group"><label for="gistId">ID или ссылка на Secret Gist</label><input id="gistId" type="text" placeholder="https://gist.github.com/…" autocomplete="off" spellcheck="false"></div>
+        <div class="field-group"><label for="githubToken">GitHub-токен</label><input id="githubToken" type="password" placeholder="Можно оставить пустым для публичного Gist" autocomplete="off" spellcheck="false"><p class="help-text">Для записи в Gist создайте <a href="https://github.com/settings/tokens/new" target="_blank" rel="noopener noreferrer">Personal Access Token</a> с правом <strong>gist</strong>. Без токена журнал откроется в режиме «только чтение» из публичного Gist.</p></div>
+        <div class="field-group"><label for="gistId">ID или ссылка на Gist (Secret или Public)</label><input id="gistId" type="text" placeholder="https://gist.github.com/…" autocomplete="off" spellcheck="false"></div>
+        <div class="field-group"><label for="gistPublicCheckbox"><input id="gistPublicCheckbox" type="checkbox"> Публичный Gist (данные видят все)</label><p class="help-text" id="publicGistWarning" hidden>Публичный Gist читают все, кто знает его адрес. Не публикуйте персональные данные учеников.</p></div>
         <p class="help-text">При переходе на эту версию обновите HTML на всех устройствах. Старая версия не читает новый формат синхронизации.</p>
         <div class="sync-actions"><button id="saveSyncConfigButton" type="button">Сохранить подключение</button><button id="testConnectionButton" class="secondary" type="button">Проверить связь</button><button id="disableSyncButton" class="danger" type="button">Отключить</button></div>
       </div>
@@ -2788,11 +2789,11 @@ var settingFields = ["maintenance", "maintenanceMessage", "maintenanceBy", "news
 var monthNames = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
 var weekdayNames = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 var state = { students: [], attendance: {}, settings: defaultSettings(), selectedMonth: getMonthString(new Date()), searchQuery: "", revision: 0, lastSyncedRevision: 0, devUnlocked: false };
-var syncConfig = { enabled: false, token: "", gistId: "", lastSync: 0, lastSyncStatus: "off", lastError: "" };
+var syncConfig = { enabled: false, token: "", gistId: "", isPublicGist: false, lastSync: 0, lastSyncStatus: "off", lastError: "" };
 var deviceId = "", logicalTime = 0, activeModal = null, previousFocus = null, modalStack = [];
 var attendanceModalState = { open: false, studentId: "", dateKey: "", currentStatus: STATUS_UNMARKED };
 var dom = {};
-["studentName", "addStudentButton", "monthPicker", "previousMonthButton", "nextMonthButton", "todayButton", "monthTitle", "tableHead", "tableBody", "emptyMessage", "searchInput", "clearSearchButton", "searchResultsInfo", "noSearchResults", "toast", "syncStatus", "syncStatusText", "toggleSyncConfigButton", "syncConfig", "githubToken", "gistId", "saveSyncConfigButton", "testConnectionButton", "disableSyncButton", "syncNowButton", "forcePushButton", "forcePullButton", "debugButton", "refreshDebugButton", "copyDebugButton", "debugBlock", "debugPre", "intervalSelect", "newsBanner", "newsText", "newsCloseButton", "versionButton", "versionButtonText", "journalEdition", "devPanelModal", "devCloseButton", "devVersionTextInput", "devSaveVersionTextButton", "devResetVersionTextButton", "devToggleMaintenanceButton", "devMaintenanceMessageInput", "devSaveMaintenanceMessageButton", "devResetMaintenanceMessageButton", "devNewsInput", "devSaveNewsButton", "devClearNewsButton", "maintenanceOverlay", "maintenanceMessageText", "maintenanceActiveBadge", "maintenanceDevAccessButton", "attendanceModal", "attCloseButton", "attStudentName", "attDateText", "attOptions", "localSaveStatus", "exportBackupButton", "importBackupButton", "importBackupInput", "restoreBackupButton", "printButton", "summaryStudents", "summaryPresent", "summaryAbsent", "summaryLate", "coverageInfo", "journalApp", "printMonthTitle"].forEach(function (id) { dom[id] = document.getElementById(id); });
+["studentName", "addStudentButton", "monthPicker", "previousMonthButton", "nextMonthButton", "todayButton", "monthTitle", "tableHead", "tableBody", "emptyMessage", "searchInput", "clearSearchButton", "searchResultsInfo", "noSearchResults", "toast", "syncStatus", "syncStatusText", "toggleSyncConfigButton", "syncConfig", "githubToken", "gistId", "gistPublicCheckbox", "publicGistWarning", "saveSyncConfigButton", "testConnectionButton", "disableSyncButton", "syncNowButton", "forcePushButton", "forcePullButton", "debugButton", "refreshDebugButton", "copyDebugButton", "debugBlock", "debugPre", "intervalSelect", "newsBanner", "newsText", "newsCloseButton", "versionButton", "versionButtonText", "journalEdition", "devPanelModal", "devCloseButton", "devVersionTextInput", "devSaveVersionTextButton", "devResetVersionTextButton", "devToggleMaintenanceButton", "devMaintenanceMessageInput", "devSaveMaintenanceMessageButton", "devResetMaintenanceMessageButton", "devNewsInput", "devSaveNewsButton", "devClearNewsButton", "maintenanceOverlay", "maintenanceMessageText", "maintenanceActiveBadge", "maintenanceDevAccessButton", "attendanceModal", "attCloseButton", "attStudentName", "attDateText", "attOptions", "localSaveStatus", "exportBackupButton", "importBackupButton", "importBackupInput", "restoreBackupButton", "printButton", "summaryStudents", "summaryPresent", "summaryAbsent", "summaryLate", "coverageInfo", "journalApp", "printMonthTitle"].forEach(function (id) { dom[id] = document.getElementById(id); });
 dom.studentNameInput = dom.studentName;
 var storage = accessibleStorage("localStorage"), sessStorage = accessibleStorage("sessionStorage");
 
@@ -3048,7 +3049,7 @@ function renderSummary(days) {
 function shouldShowMaintenance() { return state.settings.maintenance && state.settings.maintenanceBy !== deviceId && !state.devUnlocked; }
 function renderMaintenance() { var open = shouldShowMaintenance(), wasOpen = dom.maintenanceOverlay.classList.contains("open"); dom.maintenanceOverlay.classList.toggle("open", open); dom.maintenanceMessageText.textContent = state.settings.maintenanceMessage; dom.maintenanceActiveBadge.style.display = state.settings.maintenance ? "inline-flex" : "none"; updateInert(); if (open && !wasOpen && !activeModal) dom.maintenanceDevAccessButton.focus(); }
 function renderNews() {
-  var news = state.settings.news.trim(), dismissed = null; try { dismissed = sessStorage && sessStorage.getItem(NEWS_DISMISS_KEY); } catch (e) {}
+  var news = state.settings.news.trim(), dismissed = null; try { dismissed = storage && storage.getItem(NEWS_DISMISS_KEY); } catch (e) {}
   dom.newsText.textContent = news; dom.newsBanner.classList.toggle("visible", !!news && news !== dismissed);
 }
 function render() {
@@ -3104,9 +3105,9 @@ function wireCoreEvents() {
   dom.devToggleMaintenanceButton.addEventListener("click", function () { var enabled = !state.settings.maintenance; updateSettings({ maintenance: enabled, maintenanceBy: enabled ? deviceId : "" }); refreshDevPanel(); });
   dom.devSaveMaintenanceMessageButton.addEventListener("click", function () { var text = dom.devMaintenanceMessageInput.value.trim(); if (!text) return showToast("Введите сообщение", "warning"); updateSettings({ maintenanceMessage: text.slice(0, 2000) }); showToast("Сообщение сохранено", "success"); });
   dom.devResetMaintenanceMessageButton.addEventListener("click", function () { updateSettings({ maintenanceMessage: DEFAULT_MAINTENANCE_MSG }); refreshDevPanel(); });
-  dom.devSaveNewsButton.addEventListener("click", function () { updateSettings({ news: dom.devNewsInput.value.trim().slice(0, 4000) }); try { if (sessStorage) sessStorage.removeItem(NEWS_DISMISS_KEY); } catch (e) {} renderNews(); showToast("Объявление сохранено", "success"); });
+  dom.devSaveNewsButton.addEventListener("click", function () { updateSettings({ news: dom.devNewsInput.value.trim().slice(0, 4000) }); try { if (storage) storage.removeItem(NEWS_DISMISS_KEY); } catch (e) {} renderNews(); showToast("Объявление сохранено", "success"); });
   dom.devClearNewsButton.addEventListener("click", function () { updateSettings({ news: "" }); refreshDevPanel(); });
-  dom.newsCloseButton.addEventListener("click", function () { try { if (sessStorage) sessStorage.setItem(NEWS_DISMISS_KEY, state.settings.news.trim()); } catch (e) {} dom.newsBanner.classList.remove("visible"); });
+  dom.newsCloseButton.addEventListener("click", function () { try { if (storage) storage.setItem(NEWS_DISMISS_KEY, state.settings.news.trim()); } catch (e) {} dom.newsBanner.classList.remove("visible"); });
   dom.exportBackupButton.addEventListener("click", exportBackup); dom.importBackupButton.addEventListener("click", function () { dom.importBackupInput.click(); }); dom.restoreBackupButton.addEventListener("click", restoreBackup); dom.printButton.addEventListener("click", function () { window.print(); });
   dom.importBackupInput.addEventListener("change", async function (e) {
     var file = e.target.files[0]; if (!file) return;
@@ -3135,11 +3136,13 @@ function wireCoreEvents() {
 }
 function init() {
   deviceId = getDeviceId(); var loaded = loadLocal(); loadSyncConfig(); loadInterval();
+  try { if (dom.githubToken) dom.githubToken.value = syncConfig.token; if (dom.gistId) dom.gistId.value = syncConfig.gistId; if (dom.gistPublicCheckbox) dom.gistPublicCheckbox.checked = Boolean(syncConfig.isPublicGist); } catch (error) {}
   if (loaded && storage) { saveLocal(); try { storage.removeItem("attendance_dev_unlocked"); } catch (error) {} }
   if (!storage) updateLocalStatus("Только в этой вкладке", true);
   loadViewPreference(); dom.intervalSelect.value = String(syncRuntime.pollIntervalMs); wireCoreEvents(); wireViewEvents(); wireProjectEvents(); wireAppUpdates(); updateSyncUI(); render();
-  if (syncConfig.enabled && !syncConfig.token) { dom.syncConfig.classList.add("open"); var details = dom.syncConfig.closest("details"); if (details) details.open = true; showToast("Для подключения введите GitHub-токен заново.", "warning"); }
-  if (syncConfig.enabled && syncConfig.token && syncConfig.gistId && syncRuntime.pollIntervalMs > 0) { fullSync("auto"); startPolling(); }
+  // Read-only connection: a Gist ID without a token still downloads a public journal.
+  if (syncReadOnly()) { fullSync("auto"); }
+  if (syncWritable() && syncRuntime.pollIntervalMs > 0) { fullSync("auto"); startPolling(); }
 }
 
 // Presentation preferences remain local and are excluded from the synced diary.
@@ -3528,8 +3531,12 @@ function syncStable(value) {
   return JSON.stringify(value);
 }
 function syncEqual(a, b) { return syncStable(a) === syncStable(b); }
-function syncConfigured() { return Boolean(syncConfig.enabled && syncConfig.token && syncConfig.gistId); }
-function syncAutomatic() { return syncConfigured() && syncRuntime.pollIntervalMs > 0; }
+function syncConfigured() { return Boolean(syncConfig.enabled && syncConfig.gistId); }
+// A connection without a token is read-only: the journal can be viewed and
+// polled from a public Gist, but local edits never leave the device.
+function syncReadOnly() { return syncConfigured() && !syncConfig.token; }
+function syncWritable() { return syncConfigured() && Boolean(syncConfig.token); }
+function syncAutomatic() { return syncWritable() && syncRuntime.pollIntervalMs > 0; }
 function syncOnline() { return typeof navigator === "undefined" || navigator.onLine !== false; }
 function syncOperationConfig(token, gistId) {
   return Object.freeze({
@@ -3559,42 +3566,49 @@ function syncInvalidate() {
   syncRuntime.cachedFiles = {}; syncRuntime.cachedSources = null; syncRuntime.remoteApplied = false;
 }
 
+function readStoredJson(store, key) {
+  try { var raw = store && store.getItem(key); if (!raw) return null; var parsed = JSON.parse(raw); return parsed && typeof parsed === "object" ? parsed : null; }
+  catch (error) { return null; }
+}
 function loadSyncConfig() {
-  var stored = {}, saved = {};
-  try { stored = JSON.parse(storage && storage.getItem(SYNC_CONFIG_KEY) || "{}"); } catch (error) {}
-  if (!stored || typeof stored !== "object") stored = {};
-  syncConfig.enabled = Boolean(stored.enabled);
-  syncConfig.gistId = typeof stored.gistId === "string" ? extractGistId(stored.gistId) : "";
-  syncConfig.lastSync = Number(stored.lastSync) || 0;
-  // The token now survives tab/browser restarts: it is kept in localStorage.
-  try { saved = JSON.parse(storage && storage.getItem(TOKEN_KEY) || "{}"); } catch (error) {}
-  if (!saved || typeof saved !== "object") saved = {};
-  // Legacy session-only token (previous builds) is adopted once and persisted below.
-  if (typeof saved.token !== "string") {
-    var legacy = {};
-    try { legacy = JSON.parse(sessStorage && sessStorage.getItem("attendance_sync_session_token") || "{}"); } catch (error) {}
-    if (legacy && typeof legacy === "object" && typeof legacy.token === "string") saved = legacy;
+  var stored = readStoredJson(storage, SYNC_CONFIG_KEY) || {};
+  // Preferred location: token lives inside the main sync-config object in localStorage.
+  var token = typeof stored.token === "string" ? stored.token : "";
+  var gistId = typeof stored.gistId === "string" ? extractGistId(stored.gistId) : "";
+  // Fallbacks for older builds: separate localStorage token entry, then legacy sessionStorage.
+  var legacyStores = [readStoredJson(storage, TOKEN_KEY), readStoredJson(sessStorage, "attendance_sync_session_token")];
+  if (!token) {
+    for (var i = 0; i < legacyStores.length; i++) {
+      var legacy = legacyStores[i];
+      if (legacy && typeof legacy.token === "string" && legacy.token) {
+        // Only adopt a legacy token when it was bound to this same Gist (or had no binding yet).
+        if (!legacy.gistId || legacy.gistId === gistId) { token = legacy.token; break; }
+      }
+    }
   }
-  syncConfig.token = saved.gistId === syncConfig.gistId && typeof saved.token === "string" ? saved.token : "";
-  // One-time migration adopts the original persistent token if present.
-  if (!syncConfig.token && typeof stored.token === "string") syncConfig.token = stored.token;
+  syncConfig.enabled = Boolean(stored.enabled);
+  syncConfig.gistId = gistId;
+  syncConfig.token = token;
+  syncConfig.isPublicGist = Boolean(stored.isPublicGist);
+  syncConfig.lastSync = Number(stored.lastSync) || 0;
+  syncConfig.lastSyncStatus = typeof stored.lastSyncStatus === "string" ? stored.lastSyncStatus : "off";
+  syncConfig.lastError = "";
   saveSyncConfig();
   try { if (sessStorage) sessStorage.removeItem("attendance_sync_session_token"); } catch (error) {}
 }
 function saveSyncConfig() {
+  // Everything (including the token) is persisted in localStorage under one key,
+  // so closing the tab or restarting the browser never loses the connection.
   try {
     if (storage) storage.setItem(SYNC_CONFIG_KEY, JSON.stringify({
-      enabled: syncConfig.enabled, gistId: syncConfig.gistId, lastSync: syncConfig.lastSync
+      enabled: syncConfig.enabled, gistId: syncConfig.gistId, token: syncConfig.token,
+      isPublicGist: syncConfig.isPublicGist,
+      lastSync: syncConfig.lastSync, lastSyncStatus: syncConfig.lastSyncStatus
     }));
   } catch (error) {
     console.warn("Не удалось сохранить настройки синхронизации");
   }
-  try {
-    if (storage) {
-      if (syncConfig.token) storage.setItem(TOKEN_KEY, JSON.stringify({ token: syncConfig.token, gistId: syncConfig.gistId }));
-      else storage.removeItem(TOKEN_KEY);
-    }
-  } catch (error) { console.warn("Не удалось сохранить токен синхронизации"); }
+  try { if (storage) storage.removeItem(TOKEN_KEY); } catch (error) {}
 }
 function loadInterval() {
   try {
@@ -3612,7 +3626,10 @@ function saveInterval() {
   try { if (storage) storage.setItem(INTERVAL_KEY, String(syncRuntime.pollIntervalMs)); } catch (error) {}
 }
 function githubHeaders(config) {
-  return { Authorization: "Bearer " + config.token, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" };
+  var headers = { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" };
+  // Anonymous requests are allowed only for public Gists (read-only mode).
+  if (config.token) headers.Authorization = "Bearer " + config.token;
+  return headers;
 }
 function describeGithubError(status) {
   if (status === 401) return "Токен недействителен (401)";
@@ -3696,7 +3713,13 @@ async function fetchFromGist(config, options) {
   try { gist = await response.json(); } catch (error) { throw new Error("Сервер вернул некорректный ответ. Журнал не изменён."); }
   syncCheckGeneration(config);
   if (!gist || typeof gist !== "object" || !gist.files || typeof gist.files !== "object" || Array.isArray(gist.files)) throw new Error("Некорректная структура ответа Gist");
-  if (gist.public !== false) throw new Error("Для журнала нужен непубличный (Secret) Gist. Публичный Gist раскрывает данные учеников.");
+  var isPublic = gist.public === true;
+  // Remember the real visibility reported by GitHub so the UI can show it.
+  if (config.gistId === syncConfig.gistId && syncConfig.isPublicGist !== isPublic) {
+    syncConfig.isPublicGist = isPublic;
+    if (!config.token || config.token === syncConfig.token) saveSyncConfig();
+  }
+  if (!isPublic && !config.token) throw new Error("Непубличный Gist требует токен GitHub. Без токена доступен только публичный Gist в режиме «только чтение».");
   if (gist.truncated) throw new Error("Gist содержит слишком много файлов: GitHub вернул неполный список. Синхронизация остановлена.");
   var names = Object.keys(gist.files).filter(function (name) {
     return name === GIST_FILENAME || /^attendance\.device\.[a-zA-Z0-9_.-]+\.json$/.test(name);
@@ -3719,7 +3742,7 @@ async function fetchFromGist(config, options) {
   var unchanged = !options.noCache && syncRuntime.cachedRemote && syncRuntime.cachedSources && sources.length === syncRuntime.cachedSources.length && sources.every(function(data,i){return data === syncRuntime.cachedSources[i];});
   if (unchanged) assembled = syncRuntime.cachedRemote;
   else sources.forEach(function(data){assembled = assembled ? mergeData(assembled, data) : data;});
-  var result = { sources: sources, data: assembled || syncEmptyData(), etag: response.headers.get("ETag"), hasFiles: names.length > 0, notModified: Boolean(unchanged) };
+  var result = { sources: sources, data: assembled || syncEmptyData(), etag: response.headers.get("ETag"), hasFiles: names.length > 0, notModified: Boolean(unchanged), gistPublic: isPublic };
   // A connection test uses independent credentials and never poisons the cache.
   if (!options.noCache) {
     syncRuntime.cachedFiles = nextFiles; syncRuntime.cachedSources = sources;
@@ -3730,6 +3753,7 @@ async function fetchFromGist(config, options) {
 }
 async function pushToGist(data, config) {
   syncCheckGeneration(config);
+  if (!config.token) throw new Error("Нет токена GitHub: журнал открыт из публичного Gist только для чтения. Введите токен в подключении, чтобы отправлять изменения.");
   var content = JSON.stringify(data);
   if (new TextEncoder().encode(content).byteLength > 8 * 1024 * 1024) {
     var sizeError = new Error("Журнал превышает 8 МБ — безопасный предел файла Gist. Экспортируйте резервную копию и перенесите архив в отдельное хранилище.");
@@ -3755,14 +3779,17 @@ function formatTime(timestamp) {
 function updateSyncUI() {
   renderOffline();
   renderSyncOverview();
-  var configured = syncConfigured();
+  var configured = syncConfigured(), readOnly = syncReadOnly();
+  if (dom.gistPublicCheckbox) dom.gistPublicCheckbox.checked = Boolean(syncConfig.isPublicGist);
+  if (dom.publicGistWarning) dom.publicGistWarning.hidden = !syncConfig.isPublicGist;
   if (!configured) setSyncStatus("off", syncConfig.enabled && syncConfig.gistId ? "Введите токен ещё раз" : "На этом устройстве");
+  else if (readOnly) setSyncStatus("paused", "Публичный Gist · только чтение");
   else if (!syncOnline()) setSyncStatus("paused", "Нет сети · сохранено локально");
   else if (syncRuntime.isSyncing) setSyncStatus("busy", "Синхронизация…");
   else if (syncConfig.lastSyncStatus === "error") setSyncStatus("error", syncRuntime.retryTimer ? "Ошибка · повтор запланирован" : "Ошибка синхронизации");
   else if (syncRuntime.hasPendingChanges || state.revision > state.lastSyncedRevision) setSyncStatus("paused", syncRuntime.pollIntervalMs === 0 ? "Есть изменения · отправьте вручную" : "Изменения ждут отправки");
   else setSyncStatus("on", syncConfig.lastSync ? "Синхр. " + formatTime(syncConfig.lastSync) : "Готово к синхронизации");
-  [dom.syncNowButton, dom.forcePushButton, dom.forcePullButton].forEach(function (button) { if (button) button.disabled = !configured || syncRuntime.isSyncing; });
+  [dom.syncNowButton, dom.forcePushButton, dom.forcePullButton].forEach(function (button) { if (button) button.disabled = !configured || readOnly || syncRuntime.isSyncing; });
 }
 function scheduleSync() {
   if (syncRuntime.blocked && !Object.keys(offline.conflicts).length && syncConfig.lastError.indexOf("конфликт") !== -1) syncRuntime.blocked = false;
@@ -3818,6 +3845,17 @@ function syncRetry(error) {
 }
 function syncError(error, reason) {
   if (error.stale) return;
+  if (error.status === 401) {
+    // The token is kept in localStorage; only its validity is lost. Prompt for a fresh one.
+    syncConfig.token = "";
+    try { if (storage) storage.removeItem(TOKEN_KEY); } catch (saveError) {}
+    saveSyncConfig();
+    syncConfig.lastError = "Сохранённый токен отозван или истёк. Создайте новый токен GitHub с правом gist, введите его и нажмите «Сохранить подключение». ID Gist можно не менять.";
+    syncConfig.lastSyncStatus = "error";
+    saveSyncConfig(); updateSyncUI();
+    if (reason === "manual") showToast(syncConfig.lastError, "error");
+    return;
+  }
   syncRuntime.consecutiveErrors++;
   syncConfig.lastSyncStatus = "error"; syncConfig.lastError = error.message || "Синхронизация не выполнена";
   syncRuntime.hasPendingChanges = syncRuntime.hasPendingChanges || state.revision > state.lastSyncedRevision;
@@ -3857,7 +3895,8 @@ async function syncRun(reason, polling) {
       syncCheckGeneration(config);
       var sentRevision = state.revision;
       var payload = buildPayload(), sentQueue = queueSnapshot();
-      var requiresPush = !syncEqual(payload, remote.data);
+      // Read-only mode (public Gist without a token): apply remote data but never upload.
+      var requiresPush = Boolean(config.token) && !syncEqual(payload, remote.data);
       if (requiresPush) {
         // Mark the merged local-only records pending before a potentially failing
         // PATCH so even the first failure receives a retry.
@@ -3898,7 +3937,7 @@ function stopPolling() { clearInterval(syncRuntime.pollTimer); syncRuntime.pollT
 function restartPolling() { startPolling(); }
 function forcePush() { return fullSync("manual"); }
 async function forcePull() {
-  if (!syncConfigured() || syncRuntime.isSyncing) return;
+  if (!syncWritable() || syncRuntime.isSyncing) return;
   if (!confirm("Заменить журнал на этом устройстве проверенной серверной копией? Перед заменой будет сохранена резервная копия текущего журнала.")) return;
   if (!syncOnline()) { updateSyncUI(); showToast("Нет сети. Журнал остаётся на устройстве.", "warning"); return; }
   var config = syncOperationConfig();
@@ -3956,30 +3995,40 @@ function extractGistId(input) {
 }
 function syncInputConfig() {
   var token = dom.githubToken.value.trim(); var gistId = extractGistId(dom.gistId.value);
-  if (!token || !/^[a-f0-9]{5,64}$/i.test(gistId) || /[\r\n]/.test(token)) throw new Error("Введите токен GitHub и правильный ID непубличного Gist");
+  if (!/^[a-f0-9]{5,64}$/i.test(gistId) || /[\r\n]/.test(token)) throw new Error("Введите правильный ID Gist" + (token ? "" : " (или токен для записи в непубличный Gist)"));
   return syncOperationConfig(token, gistId);
 }
 function syncListen(element, event, handler) { if (element) element.addEventListener(event, handler); }
+function syncFormPublicFlag() { return Boolean(dom.gistPublicCheckbox && dom.gistPublicCheckbox.checked); }
+syncListen(dom.gistPublicCheckbox, "change", function () {
+  if (dom.publicGistWarning) dom.publicGistWarning.hidden = !syncFormPublicFlag();
+});
 syncListen(dom.toggleSyncConfigButton, "click", function () {
   var open = dom.syncConfig.classList.toggle("open");
   dom.toggleSyncConfigButton.setAttribute("aria-expanded", String(open));
-  if (open) { dom.githubToken.value = syncConfig.token; dom.gistId.value = syncConfig.gistId; dom.githubToken.focus(); }
+  if (open) { dom.githubToken.value = syncConfig.token; dom.gistId.value = syncConfig.gistId; if (dom.gistPublicCheckbox) dom.gistPublicCheckbox.checked = Boolean(syncConfig.isPublicGist); if (dom.publicGistWarning) dom.publicGistWarning.hidden = !syncConfig.isPublicGist; dom.githubToken.focus(); }
 });
 syncListen(dom.saveSyncConfigButton, "click", async function () {
   var proposed;
   try { proposed = syncInputConfig(); } catch (error) { showToast(error.message, "warning"); return; }
   dom.saveSyncConfigButton.disabled = true;
   try {
-    await fetchFromGist(proposed, { unconditional: true, noCache: true });
+    var result = await fetchFromGist(proposed, { unconditional: true, noCache: true });
     syncCheckGeneration(proposed);
     syncInvalidate();
     syncConfig.token = proposed.token; syncConfig.gistId = proposed.gistId; syncConfig.enabled = true;
+    syncConfig.isPublicGist = Boolean(result.gistPublic);
     syncConfig.lastSync = 0; syncConfig.lastSyncStatus = "off"; syncConfig.lastError = "";
     syncRuntime.hasPendingChanges = true;
     saveSyncConfig(); updateSyncUI();
     dom.syncConfig.classList.remove("open"); dom.toggleSyncConfigButton.setAttribute("aria-expanded", "false");
     startPolling();
-    await fullSync("manual");
+    if (proposed.token) {
+      await fullSync("manual");
+      showToast(syncConfig.isPublicGist ? "Подключено. Публичный Gist с токеном: полная синхронизация." : "Подключение сохранено. Журнал синхронизирован.", "success");
+    } else {
+      showToast("Подключено в режиме «только чтение»: данные загружаются из публичного Gist. Для отправки изменений добавьте токен.", "warning");
+    }
   } catch (error) { if (!error.stale) showToast(error.message, "error"); }
   finally { dom.saveSyncConfigButton.disabled = false; }
 });
@@ -3988,16 +4037,18 @@ syncListen(dom.testConnectionButton, "click", async function () {
   try { proposed = syncInputConfig(); } catch (error) { showToast(error.message, "warning"); return; }
   dom.testConnectionButton.disabled = true;
   try {
-    await fetchFromGist(proposed, { unconditional: true, noCache: true }); syncCheckGeneration(proposed);
-    showToast("Связь установлена. Gist непубличный, формат журнала проверен.", "success");
+    var result = await fetchFromGist(proposed, { unconditional: true, noCache: true }); syncCheckGeneration(proposed);
+    showToast("Связь установлена. " + (result.gistPublic ? "Gist публичный" : "Gist непубличный") + ", формат журнала проверен." + (proposed.token ? "" : " Доступ только для чтения."), "success");
   } catch (error) { if (!error.stale) showToast(error.message, "error"); }
   finally { dom.testConnectionButton.disabled = false; }
 });
 syncListen(dom.disableSyncButton, "click", function () {
   syncInvalidate();
-  syncConfig.enabled = false; syncConfig.token = ""; syncConfig.gistId = "";
+  syncConfig.enabled = false; syncConfig.token = ""; syncConfig.gistId = ""; syncConfig.isPublicGist = false;
   syncConfig.lastSync = 0; syncConfig.lastSyncStatus = "off"; syncConfig.lastError = "";
   saveSyncConfig(); updateSyncUI(); dom.githubToken.value = ""; dom.gistId.value = "";
+  if (dom.gistPublicCheckbox) dom.gistPublicCheckbox.checked = false;
+  if (dom.publicGistWarning) dom.publicGistWarning.hidden = true;
   dom.syncConfig.classList.remove("open"); dom.toggleSyncConfigButton.setAttribute("aria-expanded", "false");
   showToast("Синхронизация отключена. Журнал сохранён на устройстве.");
 });
@@ -4026,14 +4077,15 @@ function renderSyncOverview(){
   if(!syncConfigured()){
     title=syncConfig.enabled&&syncConfig.gistId?"Подключение приостановлено":"Только на этом устройстве";
     detail=syncConfig.enabled&&syncConfig.gistId?"Введите токен в подключении — изменения остаются в очереди.":"Для обмена отметками подключите один и тот же Gist на всех устройствах.";
-  }else if(conflictCount){title="Нужно выбрать версии записей";detail="Конфликтов: "+conflictCount+". Откройте очередь ниже.";}
+  }else if(syncReadOnly()){title="Публичный Gist · только чтение";detail="Журнал загружается с GitHub без токена. Правки сохраняются только на этом устройстве; для отправки добавьте токен.";}
+  else if(conflictCount){title="Нужно выбрать версии записей";detail="Конфликтов: "+conflictCount+". Откройте очередь ниже.";}
   else if(!syncOnline()){title="Без интернета";detail="Изменения сохранены здесь. В очереди: "+count+".";}
   else if(syncRuntime.isSyncing){title="Проверяем изменения…";detail="В очереди: "+count+". Можно продолжать работу.";}
   else if(syncConfig.lastSyncStatus==="error"){title="Не удалось синхронизировать";detail=syncConfig.lastError;}
   else {title=count?"Ожидают отправки: "+count:"Устройства синхронизированы";detail=(syncConfig.lastSync?"Проверено: "+formatTime(syncConfig.lastSync)+". ":"")+(syncRuntime.pollIntervalMs===0?"Отправка вручную.":"Проверка каждые "+syncRuntime.pollIntervalMs/1000+" с, пока вкладка открыта.");}
   dom.syncOverviewText.textContent=title;dom.syncOverviewDetail.textContent=detail;
-  dom.syncOverview.dataset.state=conflictCount||syncConfig.lastSyncStatus==="error"?"error":syncConfigured()?"connected":"local";
-  dom.syncQuickButton.textContent=syncConfigured()?"Обновить сейчас":"Подключить устройства";
+  dom.syncOverview.dataset.state=conflictCount||syncConfig.lastSyncStatus==="error"?"error":syncWritable()?"connected":"local";
+  dom.syncQuickButton.textContent=syncWritable()?"Обновить сейчас":syncConfigured()?"Добавить токен для записи":"Подключить устройства";
   dom.syncQuickButton.disabled=syncRuntime.isSyncing;
 }
 function announceIncoming(before,after,source){
@@ -4049,10 +4101,11 @@ function announceIncoming(before,after,source){
   showToast(text,"success");
 }
 syncListen(dom.syncQuickButton,"click",function(){
-  if(syncConfigured())return fullSync("manual");
+  if(syncWritable())return fullSync("manual");
   var panel=dom.syncConfig.closest("details");if(panel)panel.open=true;
   dom.syncConfig.classList.add("open");dom.toggleSyncConfigButton.setAttribute("aria-expanded","true");
   dom.githubToken.value=syncConfig.token;dom.gistId.value=syncConfig.gistId;
+  if(syncConfigured()&&!syncWritable()){try{fullSync("manual");}catch(error){}}
   dom.syncConfig.scrollIntoView({behavior:"smooth",block:"center"});dom.githubToken.focus({preventScroll:true});
 });
 window.addEventListener("focus",function(){if(syncAutomatic()&&Date.now()-syncRuntime.lastPullAt>2000)pollOnce();});
