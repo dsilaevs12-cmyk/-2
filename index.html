@@ -2778,6 +2778,8 @@ var DEVICE_ID_KEY = "attendance_device_id";
 var INTERVAL_KEY = "attendance_poll_interval";
 var GIST_FILENAME = "attendance.json";
 var DEFAULT_POLL_INTERVAL_MS = 5000, PUSH_DEBOUNCE_MS = 400;
+var SETTINGS_UNLOCK_KEY = "attendance_settings_unlocked";
+var SETTINGS_CODE_SET_KEY = "attendance_settings_code_set";
 var BACKUP_KEY = "attendance_recovery_backups";
 var NEWS_DISMISS_KEY = "attendance_news_dismissed";
 var DEFAULT_VERSION_TEXT = "версия: 3.3";
@@ -3057,7 +3059,7 @@ function render() {
   renderViewControls(days); dom.printMonthTitle.textContent = dom.monthTitle.textContent;
   renderHeader(days); renderBody(days); renderSummary(days); renderStudentCard();
   dom.searchResultsInfo.textContent = state.searchQuery.trim() ? "Найдено " + getFilteredStudents().length + " из " + getVisibleStudents().length : "Всего " + getVisibleStudents().length;
-  dom.clearSearchButton.hidden = !state.searchQuery; dom.versionButtonText.textContent = state.settings.versionText; dom.versionButton.setAttribute("aria-label", state.settings.versionText + ". Открыть настройки по коду"); if (dom.journalEdition) dom.journalEdition.textContent = "v" + APP_VERSION; renderNews(); renderMaintenance(); renderProject(); renderOffline();
+  dom.clearSearchButton.hidden = !state.searchQuery; dom.versionButtonText.textContent = state.settings.versionText; dom.versionButton.setAttribute("aria-label", state.settings.versionText + ". Открыть настройки по коду"); if (dom.journalEdition) dom.journalEdition.textContent = settingsVersionText(); renderNews(); renderMaintenance(); renderProject(); renderOffline();
   if (!activeModal && focused && focused.dataset && focused.dataset.dateKey && !focused.isConnected) { var replacement = document.querySelector('.attendance-button[data-student-id="' + focused.dataset.studentId + '"][data-date-key="' + focused.dataset.dateKey + '"]'); if (replacement) replacement.focus(); }
 }
 function refreshDevPanel() {
@@ -3067,7 +3069,22 @@ function refreshDevPanel() {
 }
 function openDevPanel() { if (!state.devUnlocked) { openPasswordModal(); return; } refreshDevPanel(); renderMaintenance(); openModal(dom.devPanelModal, dom.devVersionTextInput); }
 function collapseDevPanel() { closeModal(); renderMaintenance(); }
-function exitDevSettings() { state.devUnlocked = false; closeModal(); renderMaintenance(); showToast("Вы вышли из настроек. Для возврата потребуется код доступа.", "info"); }
+function exitDevSettings() { state.devUnlocked = false; try { if (storage) storage.removeItem(SETTINGS_UNLOCK_KEY); } catch (error) {} closeModal(); renderMaintenance(); showToast("Вы вышли из настроек. Для возврата потребуется код доступа.", "info"); }
+// The small gray label above the site title follows the access code: while a
+// personal code is set on this device, the edition shows its installation date.
+function settingsCodeInstalled() {
+  try { if (storage && storage.getItem(SETTINGS_CODE_SET_KEY)) return true; } catch (error) {}
+  return SETTINGS_ACCESS_CODE !== DEFAULT_SETTINGS_ACCESS_CODE;
+}
+function settingsEditionText() {
+  var stamp = null;
+  try { stamp = Number(storage && storage.getItem(SETTINGS_CODE_SET_KEY)) || null; } catch (error) {}
+  if (!(stamp > 0)) return "v" + APP_VERSION;
+  var d = new Date(stamp);
+  var pad = function (n) { return String(n).length < 2 ? "0" + n : String(n); };
+  return "v" + d.getFullYear() + "." + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+}
+function settingsVersionText() { return "Версия " + settingsEditionText(); }
 function renderDebug() { dom.debugPre.textContent = JSON.stringify({ version: 5, deviceId: deviceId, revision: state.revision, pending: syncRuntime.hasPendingChanges, syncing: syncRuntime.isSyncing, lastError: syncConfig.lastError, students: getVisibleStudents().length, attendance: Object.keys(state.attendance).length, gistId: syncConfig.gistId || null }, null, 2); }
 function exportBackup() {
   var payload = buildPayload(); payload.exportedAt = new Date().toISOString();
@@ -3138,7 +3155,11 @@ function wireCoreEvents() {
 function init() {
   deviceId = getDeviceId(); var loaded = loadLocal(); loadSyncConfig(); loadInterval();
   try { if (dom.githubToken) dom.githubToken.value = syncConfig.token; if (dom.gistId) dom.gistId.value = syncConfig.gistId; if (dom.gistPublicCheckbox) dom.gistPublicCheckbox.checked = Boolean(syncConfig.isPublicGist); } catch (error) {}
-  if (loaded && storage) { saveLocal(); try { storage.removeItem("attendance_dev_unlocked"); } catch (error) {} }
+  if (loaded && storage) { saveLocal(); }
+  // The settings unlock flag is restored from localStorage below; only the
+  // obsolete per-session flag from earlier builds is cleaned up here.
+  try { if (sessStorage) sessStorage.removeItem("attendance_dev_unlocked"); } catch (error) {}
+  try { if (!state.devUnlocked && storage && storage.getItem(SETTINGS_UNLOCK_KEY) === "1") state.devUnlocked = true; } catch (error) {}
   if (!storage) updateLocalStatus("Только в этой вкладке", true);
   loadViewPreference(); dom.intervalSelect.value = String(syncRuntime.pollIntervalMs); wireCoreEvents(); wireViewEvents(); wireProjectEvents(); wireAppUpdates(); updateSyncUI(); render();
   // Read-only connection: a Gist ID without a token still downloads a public journal.
@@ -3148,7 +3169,8 @@ function init() {
 
 // Presentation preferences remain local and are excluded from the synced diary.
 var VIEW_PREFERENCE_KEY = "attendance_view_mode";
-var SETTINGS_ACCESS_CODE = "020912";
+var DEFAULT_SETTINGS_ACCESS_CODE = "020912";
+var SETTINGS_ACCESS_CODE = DEFAULT_SETTINGS_ACCESS_CODE;
 var studentCardState = { studentId: "", month: "" };
 state.selectedDate = formatDateKey(new Date());
 state.viewMode = "month";
@@ -3226,7 +3248,10 @@ function closePasswordModal() { dom.settingsPasswordInput.value = ""; dom.settin
 function submitSettingsCode(event) {
   event.preventDefault();
   if (dom.settingsPasswordInput.value !== SETTINGS_ACCESS_CODE) { dom.settingsPasswordError.textContent = "Неверный код. Попробуйте ещё раз."; dom.settingsPasswordInput.setAttribute("aria-invalid", "true"); dom.settingsPasswordInput.value = ""; dom.settingsPasswordInput.focus(); return; }
-  closePasswordModal(); state.devUnlocked = true; openDevPanel();
+  closePasswordModal(); state.devUnlocked = true;
+  // The unlock survives tab closures until "Выйти из настроек" is pressed.
+  try { if (storage) storage.setItem(SETTINGS_UNLOCK_KEY, "1"); } catch (error) {}
+  openDevPanel();
 }
 
 function openStudentCard(studentId) {
