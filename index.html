@@ -2671,7 +2671,7 @@ input[type="date"]:focus { outline: none; border-color: var(--primary); box-shad
   <details class="sync-panel panel">
     <summary class="sync-summary"><div class="sync-header"><div><h2>Синхронизация устройств</h2><p>Локальное сохранение работает и без подключения</p></div><span id="syncStatus" class="sync-status off" role="status"><span class="status-dot" aria-hidden="true"></span><span id="syncStatusText">На этом устройстве</span></span></div></summary>
     <div class="sync-content">
-      <p class="help-text">На всех устройствах укажите один и тот же ID непубличного (Secret) GitHub Gist. На новом устройстве нажмите «Сохранить подключение» — существующий журнал загрузится автоматически. Токен хранится только до закрытия вкладки. Secret Gist доступен всем, у кого есть его ссылка.</p>
+      <p class="help-text">На всех устройствах укажите один и тот же ID непубличного (Secret) GitHub Gist. На новом устройстве нажмите «Сохранить подключение» — существующий журнал загрузится автоматически. Токен сохраняется в этом браузере и не сбрасывается после закрытия вкладки. Secret Gist доступен всем, у кого есть его ссылка.</p>
       <div class="sync-actions"><button id="toggleSyncConfigButton" class="secondary" type="button">Подключение</button><button id="syncNowButton" type="button" disabled>Синхронизировать</button><button id="forcePushButton" class="secondary" type="button" disabled>Отправить изменения</button><button id="forcePullButton" class="secondary" type="button" disabled>Взять с сервера</button><button id="debugButton" class="secondary" type="button">Диагностика</button></div>
       <div class="interval-row"><label for="intervalSelect">Обновлять данные</label><select id="intervalSelect"><option value="0">Только вручную</option><option value="5000" selected>Каждые 5 секунд</option><option value="15000">Каждые 15 секунд</option><option value="30000">Каждые 30 секунд</option><option value="60000">Каждую минуту</option></select></div>
       <div id="syncConfig" class="sync-config">
@@ -3138,7 +3138,7 @@ function init() {
   if (loaded && storage) { saveLocal(); try { storage.removeItem("attendance_dev_unlocked"); } catch (error) {} }
   if (!storage) updateLocalStatus("Только в этой вкладке", true);
   loadViewPreference(); dom.intervalSelect.value = String(syncRuntime.pollIntervalMs); wireCoreEvents(); wireViewEvents(); wireProjectEvents(); wireAppUpdates(); updateSyncUI(); render();
-  if (syncConfig.enabled && !syncConfig.token) { dom.syncConfig.classList.add("open"); var details = dom.syncConfig.closest("details"); if (details) details.open = true; showToast("Для подключения введите GitHub-токен заново. Он хранится только до закрытия вкладки.", "warning"); }
+  if (syncConfig.enabled && !syncConfig.token) { dom.syncConfig.classList.add("open"); var details = dom.syncConfig.closest("details"); if (details) details.open = true; showToast("Для подключения введите GitHub-токен заново.", "warning"); }
   if (syncConfig.enabled && syncConfig.token && syncConfig.gistId && syncRuntime.pollIntervalMs > 0) { fullSync("auto"); startPolling(); }
 }
 
@@ -3515,7 +3515,7 @@ var syncRuntime = {
   activeOperation: null, operationCounter: 0, controllers: new Set(),
   tabWriterId: generateId().replace(/[^a-zA-Z0-9_-]/g, "")
 };
-var SESSION_TOKEN_KEY = "attendance_sync_session_token";
+var TOKEN_KEY = "attendance_sync_token";
 
 function syncClone(value) { return JSON.parse(JSON.stringify(value)); }
 function syncStable(value) {
@@ -3560,18 +3560,26 @@ function syncInvalidate() {
 }
 
 function loadSyncConfig() {
-  var stored = {}, session = {};
+  var stored = {}, saved = {};
   try { stored = JSON.parse(storage && storage.getItem(SYNC_CONFIG_KEY) || "{}"); } catch (error) {}
   if (!stored || typeof stored !== "object") stored = {};
   syncConfig.enabled = Boolean(stored.enabled);
   syncConfig.gistId = typeof stored.gistId === "string" ? extractGistId(stored.gistId) : "";
   syncConfig.lastSync = Number(stored.lastSync) || 0;
-  try { session = JSON.parse(sessStorage && sessStorage.getItem(SESSION_TOKEN_KEY) || "{}"); } catch (error) {}
-  if (!session || typeof session !== "object") session = {};
-  syncConfig.token = session.gistId === syncConfig.gistId && typeof session.token === "string" ? session.token : "";
-  // One-time migration removes the original persistent token immediately.
+  // The token now survives tab/browser restarts: it is kept in localStorage.
+  try { saved = JSON.parse(storage && storage.getItem(TOKEN_KEY) || "{}"); } catch (error) {}
+  if (!saved || typeof saved !== "object") saved = {};
+  // Legacy session-only token (previous builds) is adopted once and persisted below.
+  if (typeof saved.token !== "string") {
+    var legacy = {};
+    try { legacy = JSON.parse(sessStorage && sessStorage.getItem("attendance_sync_session_token") || "{}"); } catch (error) {}
+    if (legacy && typeof legacy === "object" && typeof legacy.token === "string") saved = legacy;
+  }
+  syncConfig.token = saved.gistId === syncConfig.gistId && typeof saved.token === "string" ? saved.token : "";
+  // One-time migration adopts the original persistent token if present.
   if (!syncConfig.token && typeof stored.token === "string") syncConfig.token = stored.token;
   saveSyncConfig();
+  try { if (sessStorage) sessStorage.removeItem("attendance_sync_session_token"); } catch (error) {}
 }
 function saveSyncConfig() {
   try {
@@ -3579,17 +3587,14 @@ function saveSyncConfig() {
       enabled: syncConfig.enabled, gistId: syncConfig.gistId, lastSync: syncConfig.lastSync
     }));
   } catch (error) {
-    // If replacing the old config fails (for example, quota exhausted), remove
-    // it anyway so a migrated token cannot remain in permanent storage.
-    try { if (storage) storage.removeItem(SYNC_CONFIG_KEY); } catch (removeError) {}
     console.warn("Не удалось сохранить настройки синхронизации");
   }
   try {
-    if (sessStorage) {
-      if (syncConfig.token) sessStorage.setItem(SESSION_TOKEN_KEY, JSON.stringify({ token: syncConfig.token, gistId: syncConfig.gistId }));
-      else sessStorage.removeItem(SESSION_TOKEN_KEY);
+    if (storage) {
+      if (syncConfig.token) storage.setItem(TOKEN_KEY, JSON.stringify({ token: syncConfig.token, gistId: syncConfig.gistId }));
+      else storage.removeItem(TOKEN_KEY);
     }
-  } catch (error) { console.warn("Токен доступен только до закрытия этой страницы"); }
+  } catch (error) { console.warn("Не удалось сохранить токен синхронизации"); }
 }
 function loadInterval() {
   try {
@@ -3751,7 +3756,7 @@ function updateSyncUI() {
   renderOffline();
   renderSyncOverview();
   var configured = syncConfigured();
-  if (!configured) setSyncStatus("off", syncConfig.enabled && syncConfig.gistId ? "Введите токен для этой сессии" : "На этом устройстве");
+  if (!configured) setSyncStatus("off", syncConfig.enabled && syncConfig.gistId ? "Введите токен ещё раз" : "На этом устройстве");
   else if (!syncOnline()) setSyncStatus("paused", "Нет сети · сохранено локально");
   else if (syncRuntime.isSyncing) setSyncStatus("busy", "Синхронизация…");
   else if (syncConfig.lastSyncStatus === "error") setSyncStatus("error", syncRuntime.retryTimer ? "Ошибка · повтор запланирован" : "Ошибка синхронизации");
