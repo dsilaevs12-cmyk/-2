@@ -3048,7 +3048,7 @@ function renderSummary(days) {
 function shouldShowMaintenance() { return state.settings.maintenance && state.settings.maintenanceBy !== deviceId && !state.devUnlocked; }
 function renderMaintenance() { var open = shouldShowMaintenance(), wasOpen = dom.maintenanceOverlay.classList.contains("open"); dom.maintenanceOverlay.classList.toggle("open", open); dom.maintenanceMessageText.textContent = state.settings.maintenanceMessage; dom.maintenanceActiveBadge.style.display = state.settings.maintenance ? "inline-flex" : "none"; updateInert(); if (open && !wasOpen && !activeModal) dom.maintenanceDevAccessButton.focus(); }
 function renderNews() {
-  var news = state.settings.news.trim(), dismissed = null; try { dismissed = sessStorage && sessStorage.getItem(NEWS_DISMISS_KEY); } catch (e) {}
+  var news = state.settings.news.trim(), dismissed = null; try { dismissed = storage && storage.getItem(NEWS_DISMISS_KEY); } catch (e) {}
   dom.newsText.textContent = news; dom.newsBanner.classList.toggle("visible", !!news && news !== dismissed);
 }
 function render() {
@@ -3104,9 +3104,9 @@ function wireCoreEvents() {
   dom.devToggleMaintenanceButton.addEventListener("click", function () { var enabled = !state.settings.maintenance; updateSettings({ maintenance: enabled, maintenanceBy: enabled ? deviceId : "" }); refreshDevPanel(); });
   dom.devSaveMaintenanceMessageButton.addEventListener("click", function () { var text = dom.devMaintenanceMessageInput.value.trim(); if (!text) return showToast("Введите сообщение", "warning"); updateSettings({ maintenanceMessage: text.slice(0, 2000) }); showToast("Сообщение сохранено", "success"); });
   dom.devResetMaintenanceMessageButton.addEventListener("click", function () { updateSettings({ maintenanceMessage: DEFAULT_MAINTENANCE_MSG }); refreshDevPanel(); });
-  dom.devSaveNewsButton.addEventListener("click", function () { updateSettings({ news: dom.devNewsInput.value.trim().slice(0, 4000) }); try { if (sessStorage) sessStorage.removeItem(NEWS_DISMISS_KEY); } catch (e) {} renderNews(); showToast("Объявление сохранено", "success"); });
+  dom.devSaveNewsButton.addEventListener("click", function () { updateSettings({ news: dom.devNewsInput.value.trim().slice(0, 4000) }); try { if (storage) storage.removeItem(NEWS_DISMISS_KEY); } catch (e) {} renderNews(); showToast("Объявление сохранено", "success"); });
   dom.devClearNewsButton.addEventListener("click", function () { updateSettings({ news: "" }); refreshDevPanel(); });
-  dom.newsCloseButton.addEventListener("click", function () { try { if (sessStorage) sessStorage.setItem(NEWS_DISMISS_KEY, state.settings.news.trim()); } catch (e) {} dom.newsBanner.classList.remove("visible"); });
+  dom.newsCloseButton.addEventListener("click", function () { try { if (storage) storage.setItem(NEWS_DISMISS_KEY, state.settings.news.trim()); } catch (e) {} dom.newsBanner.classList.remove("visible"); });
   dom.exportBackupButton.addEventListener("click", exportBackup); dom.importBackupButton.addEventListener("click", function () { dom.importBackupInput.click(); }); dom.restoreBackupButton.addEventListener("click", restoreBackup); dom.printButton.addEventListener("click", function () { window.print(); });
   dom.importBackupInput.addEventListener("change", async function (e) {
     var file = e.target.files[0]; if (!file) return;
@@ -3135,10 +3135,11 @@ function wireCoreEvents() {
 }
 function init() {
   deviceId = getDeviceId(); var loaded = loadLocal(); loadSyncConfig(); loadInterval();
+  try { if (dom.githubToken) dom.githubToken.value = syncConfig.token; if (dom.gistId) dom.gistId.value = syncConfig.gistId; } catch (error) {}
   if (loaded && storage) { saveLocal(); try { storage.removeItem("attendance_dev_unlocked"); } catch (error) {} }
   if (!storage) updateLocalStatus("Только в этой вкладке", true);
   loadViewPreference(); dom.intervalSelect.value = String(syncRuntime.pollIntervalMs); wireCoreEvents(); wireViewEvents(); wireProjectEvents(); wireAppUpdates(); updateSyncUI(); render();
-  if (syncConfig.enabled && !syncConfig.token) { dom.syncConfig.classList.add("open"); var details = dom.syncConfig.closest("details"); if (details) details.open = true; showToast("Для подключения введите GitHub-токен заново.", "warning"); }
+  if (syncConfig.enabled && !syncConfig.token) { dom.syncConfig.classList.add("open"); var details = dom.syncConfig.closest("details"); if (details) details.open = true; showToast("Токен не найден в этом браузере. Введите его, чтобы возобновить синхронизацию.", "warning"); }
   if (syncConfig.enabled && syncConfig.token && syncConfig.gistId && syncRuntime.pollIntervalMs > 0) { fullSync("auto"); startPolling(); }
 }
 
@@ -3559,42 +3560,47 @@ function syncInvalidate() {
   syncRuntime.cachedFiles = {}; syncRuntime.cachedSources = null; syncRuntime.remoteApplied = false;
 }
 
+function readStoredJson(store, key) {
+  try { var raw = store && store.getItem(key); if (!raw) return null; var parsed = JSON.parse(raw); return parsed && typeof parsed === "object" ? parsed : null; }
+  catch (error) { return null; }
+}
 function loadSyncConfig() {
-  var stored = {}, saved = {};
-  try { stored = JSON.parse(storage && storage.getItem(SYNC_CONFIG_KEY) || "{}"); } catch (error) {}
-  if (!stored || typeof stored !== "object") stored = {};
-  syncConfig.enabled = Boolean(stored.enabled);
-  syncConfig.gistId = typeof stored.gistId === "string" ? extractGistId(stored.gistId) : "";
-  syncConfig.lastSync = Number(stored.lastSync) || 0;
-  // The token now survives tab/browser restarts: it is kept in localStorage.
-  try { saved = JSON.parse(storage && storage.getItem(TOKEN_KEY) || "{}"); } catch (error) {}
-  if (!saved || typeof saved !== "object") saved = {};
-  // Legacy session-only token (previous builds) is adopted once and persisted below.
-  if (typeof saved.token !== "string") {
-    var legacy = {};
-    try { legacy = JSON.parse(sessStorage && sessStorage.getItem("attendance_sync_session_token") || "{}"); } catch (error) {}
-    if (legacy && typeof legacy === "object" && typeof legacy.token === "string") saved = legacy;
+  var stored = readStoredJson(storage, SYNC_CONFIG_KEY) || {};
+  // Preferred location: token lives inside the main sync-config object in localStorage.
+  var token = typeof stored.token === "string" ? stored.token : "";
+  var gistId = typeof stored.gistId === "string" ? extractGistId(stored.gistId) : "";
+  // Fallbacks for older builds: separate localStorage token entry, then legacy sessionStorage.
+  var legacyStores = [readStoredJson(storage, TOKEN_KEY), readStoredJson(sessStorage, "attendance_sync_session_token")];
+  if (!token) {
+    for (var i = 0; i < legacyStores.length; i++) {
+      var legacy = legacyStores[i];
+      if (legacy && typeof legacy.token === "string" && legacy.token) {
+        // Only adopt a legacy token when it was bound to this same Gist (or had no binding yet).
+        if (!legacy.gistId || legacy.gistId === gistId) { token = legacy.token; break; }
+      }
+    }
   }
-  syncConfig.token = saved.gistId === syncConfig.gistId && typeof saved.token === "string" ? saved.token : "";
-  // One-time migration adopts the original persistent token if present.
-  if (!syncConfig.token && typeof stored.token === "string") syncConfig.token = stored.token;
+  syncConfig.enabled = Boolean(stored.enabled);
+  syncConfig.gistId = gistId;
+  syncConfig.token = token;
+  syncConfig.lastSync = Number(stored.lastSync) || 0;
+  syncConfig.lastSyncStatus = typeof stored.lastSyncStatus === "string" ? stored.lastSyncStatus : "off";
+  syncConfig.lastError = "";
   saveSyncConfig();
   try { if (sessStorage) sessStorage.removeItem("attendance_sync_session_token"); } catch (error) {}
 }
 function saveSyncConfig() {
+  // Everything (including the token) is persisted in localStorage under one key,
+  // so closing the tab or restarting the browser never loses the connection.
   try {
     if (storage) storage.setItem(SYNC_CONFIG_KEY, JSON.stringify({
-      enabled: syncConfig.enabled, gistId: syncConfig.gistId, lastSync: syncConfig.lastSync
+      enabled: syncConfig.enabled, gistId: syncConfig.gistId, token: syncConfig.token,
+      lastSync: syncConfig.lastSync, lastSyncStatus: syncConfig.lastSyncStatus
     }));
   } catch (error) {
     console.warn("Не удалось сохранить настройки синхронизации");
   }
-  try {
-    if (storage) {
-      if (syncConfig.token) storage.setItem(TOKEN_KEY, JSON.stringify({ token: syncConfig.token, gistId: syncConfig.gistId }));
-      else storage.removeItem(TOKEN_KEY);
-    }
-  } catch (error) { console.warn("Не удалось сохранить токен синхронизации"); }
+  try { if (storage) storage.removeItem(TOKEN_KEY); } catch (error) {}
 }
 function loadInterval() {
   try {
@@ -3818,6 +3824,17 @@ function syncRetry(error) {
 }
 function syncError(error, reason) {
   if (error.stale) return;
+  if (error.status === 401) {
+    // The token is kept in localStorage; only its validity is lost. Prompt for a fresh one.
+    syncConfig.token = "";
+    try { if (storage) storage.removeItem(TOKEN_KEY); } catch (saveError) {}
+    saveSyncConfig();
+    syncConfig.lastError = "Сохранённый токен отозван или истёк. Создайте новый токен GitHub с правом gist, введите его и нажмите «Сохранить подключение». ID Gist можно не менять.";
+    syncConfig.lastSyncStatus = "error";
+    saveSyncConfig(); updateSyncUI();
+    if (reason === "manual") showToast(syncConfig.lastError, "error");
+    return;
+  }
   syncRuntime.consecutiveErrors++;
   syncConfig.lastSyncStatus = "error"; syncConfig.lastError = error.message || "Синхронизация не выполнена";
   syncRuntime.hasPendingChanges = syncRuntime.hasPendingChanges || state.revision > state.lastSyncedRevision;
