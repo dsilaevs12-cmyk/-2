@@ -1006,7 +1006,12 @@ function settingsEditionText() {
   var pad = function (n) { return String(n).length < 2 ? "0" + n : String(n); };
   return "v" + d.getFullYear() + "." + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
 }
-function settingsVersionText() { return "Версия " + settingsEditionText(); }
+// The header label is the version text edited in settings ("Текст кнопки
+// версии"), with the leading word "версия" replaced by "Версия журнала".
+function settingsVersionText() {
+  var text = String(state.settings.versionText || DEFAULT_VERSION_TEXT).trim();
+  return text.replace(/^версия\b/i, "Версия журнала");
+}
 function renderDebug() { dom.debugPre.textContent = JSON.stringify({ version: 5, deviceId: deviceId, revision: state.revision, pending: syncRuntime.hasPendingChanges, syncing: syncRuntime.isSyncing, lastError: syncConfig.lastError, students: getVisibleStudents().length, attendance: Object.keys(state.attendance).length, gistId: syncConfig.gistId || null }, null, 2); }
 function exportBackup() {
   var payload = buildPayload(); payload.exportedAt = new Date().toISOString();
