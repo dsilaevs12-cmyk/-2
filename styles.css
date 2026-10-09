@@ -2510,6 +2510,11 @@ input[type="date"]:focus { outline: none; border-color: var(--primary); box-shad
 .device-tech-flag{width:100%;min-width:0;max-width:100%;min-height:34px;height:34px;padding:5px 6px;font-size:11px;font-weight:600;line-height:1.2;border-radius:999px;border:1px solid var(--border,#d9e2ec);background:#fff;color:#5c7280;cursor:pointer;white-space:normal;text-align:center;overflow-wrap:anywhere;box-sizing:border-box}
 .device-tech-flag.is-active{background:#176c5c;border-color:#176c5c;color:#fff}
 .device-tech-flag:disabled{opacity:.55;cursor:not-allowed}
+/* User (account) rows in the settings panel reuse .device-row layout: name+date | journal link | delete. */
+.user-row{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) 92px}
+.user-remove{width:100%;min-width:0;min-height:34px;padding:6px 8px;font-size:12px;font-weight:600;border-radius:10px;box-sizing:border-box}
+.user-remove:disabled{opacity:.55;cursor:not-allowed}
+@media(max-width:640px){.user-row{grid-template-columns:1fr}}
 /* Device rows must never inherit the global mobile "button { width: 100% } */
 @media (max-width: 700px) {
   .device-row button, .device-row input, .device-row select { width: auto; }

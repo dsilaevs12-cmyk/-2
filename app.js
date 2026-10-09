@@ -25,7 +25,7 @@ var syncConfig = { enabled: false, token: "", gistId: "", isPublicGist: false, l
 var deviceId = "", logicalTime = 0, activeModal = null, previousFocus = null, modalStack = [];
 var attendanceModalState = { open: false, studentId: "", dateKey: "", currentStatus: STATUS_UNMARKED };
 var dom = {};
-["studentName", "addStudentButton", "monthPicker", "previousMonthButton", "nextMonthButton", "todayButton", "monthTitle", "tableHead", "tableBody", "emptyMessage", "searchInput", "clearSearchButton", "searchResultsInfo", "noSearchResults", "toast", "syncStatus", "syncStatusText", "toggleSyncConfigButton", "syncConfig", "githubToken", "gistId", "gistPublicCheckbox", "publicGistWarning", "saveSyncConfigButton", "testConnectionButton", "disableSyncButton", "syncNowButton", "forcePushButton", "forcePullButton", "debugButton", "refreshDebugButton", "copyDebugButton", "debugBlock", "debugPre", "intervalSelect", "newsBanner", "newsText", "newsCloseButton", "versionButton", "versionButtonText", "journalEdition", "devPanelModal", "devCloseButton", "devExitButton", "devVersionTextInput", "devSaveVersionTextButton", "devResetVersionTextButton", "devToggleMaintenanceButton", "devMaintenanceMessageInput", "devSaveMaintenanceMessageButton", "devResetMaintenanceMessageButton", "devNewsInput", "devSaveNewsButton", "devClearNewsButton", "devClearAllButton", "maintenanceOverlay", "maintenanceMessageText", "maintenanceActiveBadge", "maintenanceDevAccessButton", "attendanceModal", "attCloseButton", "attStudentName", "attDateText", "attOptions", "localSaveStatus", "exportBackupButton", "importBackupButton", "importBackupInput", "restoreBackupButton", "printButton", "summaryStudents", "summaryPresent", "summaryAbsent", "summaryLate", "coverageInfo", "journalApp", "printMonthTitle"].forEach(function (id) { dom[id] = document.getElementById(id); });
+["userList", "refreshUserListButton", "studentName", "addStudentButton", "monthPicker", "previousMonthButton", "nextMonthButton", "todayButton", "monthTitle", "tableHead", "tableBody", "emptyMessage", "searchInput", "clearSearchButton", "searchResultsInfo", "noSearchResults", "toast", "syncStatus", "syncStatusText", "toggleSyncConfigButton", "syncConfig", "githubToken", "gistId", "gistPublicCheckbox", "publicGistWarning", "saveSyncConfigButton", "testConnectionButton", "disableSyncButton", "syncNowButton", "forcePushButton", "forcePullButton", "debugButton", "refreshDebugButton", "copyDebugButton", "debugBlock", "debugPre", "intervalSelect", "newsBanner", "newsText", "newsCloseButton", "versionButton", "versionButtonText", "journalEdition", "devPanelModal", "devCloseButton", "devExitButton", "devVersionTextInput", "devSaveVersionTextButton", "devResetVersionTextButton", "devToggleMaintenanceButton", "devMaintenanceMessageInput", "devSaveMaintenanceMessageButton", "devResetMaintenanceMessageButton", "devNewsInput", "devSaveNewsButton", "devClearNewsButton", "devClearAllButton", "maintenanceOverlay", "maintenanceMessageText", "maintenanceActiveBadge", "maintenanceDevAccessButton", "attendanceModal", "attCloseButton", "attStudentName", "attDateText", "attOptions", "localSaveStatus", "exportBackupButton", "importBackupButton", "importBackupInput", "restoreBackupButton", "printButton", "summaryStudents", "summaryPresent", "summaryAbsent", "summaryLate", "coverageInfo", "journalApp", "printMonthTitle"].forEach(function (id) { dom[id] = document.getElementById(id); });
 dom.studentNameInput = dom.studentName;
 var storage = accessibleStorage("localStorage"), sessStorage = accessibleStorage("sessionStorage");
 
@@ -251,6 +251,10 @@ function applyRoleRestrictions() {
   });
   Array.prototype.forEach.call(document.querySelectorAll(".device-tech-flag"), function (el) {
     el.disabled = el.dataset.deviceId !== deviceId && !(perms.canManageDevices && syncWritable());
+  });
+  // User list in settings: deleting accounts follows the device-management rights.
+  Array.prototype.forEach.call(document.querySelectorAll(".user-remove"), function (el) {
+    el.disabled = !perms.canManageDevices;
   });
 }
 function newer(a, b) {
@@ -796,6 +800,79 @@ function findAuthAccountById(id) {
   for (var i = 0; i < accounts.length; i++) { if (accounts[i].id === id) return accounts[i]; }
   return null;
 }
+/* ---------- User (account) management in the settings panel ---------- */
+// Accounts live only on this device (AUTH_ACCOUNTS_KEY). The settings panel
+// lists them and allows deleting: the credential is removed forever, the
+// current session ends if it belonged to the deleted account, and a recovery
+// backup of the journal is saved beforehand. Linked journal students are NOT
+// deleted — their profile simply becomes unlinked («Не привязан»).
+function renderUserList() {
+  var container = dom.userList;
+  if (!container) return;
+  var accounts = loadAuthAccounts().slice().sort(function (a, b) { return String(a.fullName || "").localeCompare(String(b.fullName || ""), "ru"); });
+  var session = currentAuthSession();
+  if (!accounts.length) {
+    container.innerHTML = '<p class="help-text">Пока нет ни одного аккаунта — пользователи создаются на экране входа.</p>';
+    return;
+  }
+  var canManage = effectivePermissions().canManageDevices;
+  container.textContent = "";
+  accounts.forEach(function (account) {
+    var row = document.createElement("div"); row.className = "device-row user-row";
+    var info = document.createElement("div");
+    var name = document.createElement("span"); name.className = "device-name";
+    name.textContent = account.fullName || (account.firstName + " " + account.lastName);
+    info.appendChild(name);
+    if (session && session.accountId === account.id) { var badge = document.createElement("span"); badge.className = "device-badge"; badge.textContent = "текущий вход"; info.appendChild(badge); }
+    var created = document.createElement("span"); created.className = "device-id";
+    created.textContent = "Создан: " + formatAuthDate(account.createdAt);
+    info.appendChild(document.createElement("br")); info.appendChild(created);
+    row.appendChild(info);
+    var meta = document.createElement("span"); meta.className = "device-seen";
+    var linked = (state.students || []).find(function (s) { return s && !s.deleted && (s.accountId === account.id || authNormalizeName(s.name || "") === authNormalizeName(account.fullName || "")); });
+    meta.textContent = linked ? "В журнале: " + linked.name : "В журнале: не привязан";
+    row.appendChild(meta);
+    var remove = document.createElement("button"); remove.type = "button"; remove.className = "danger user-remove";
+    remove.dataset.accountId = account.id;
+    remove.textContent = "Удалить";
+    remove.disabled = !canManage;
+    remove.title = canManage ? "Удалить этот аккаунт с устройства" : "Удалять аккаунты могут только учитель или тех. администрация";
+    row.appendChild(remove);
+    container.appendChild(row);
+  });
+}
+function removeAuthAccount(id) {
+  var perms = effectivePermissions();
+  if (!perms.canManageDevices) { showToast("Удаление пользователей доступно учителю или тех. администрации", "warning"); return false; }
+  var accounts = loadAuthAccounts();
+  var account = null;
+  for (var i = 0; i < accounts.length; i++) { if (accounts[i].id === id) { account = accounts[i]; break; } }
+  if (!account) { showToast("Аккаунт не найден — обновите список", "warning"); renderUserList(); return false; }
+  var session = currentAuthSession();
+  var isCurrent = Boolean(session && session.accountId === id);
+  var warning = "Удалить пользователя «" + (account.fullName || "без имени") + "» с этого устройства?\nВход по этому аккаунту станет невозможен, секретное слово будет утеряно." +
+    (isCurrent ? "\nЭто текущая учётная запись — после удаления потребуется новый вход." : "");
+  if (!window.confirm(warning)) return false;
+  // Second confirmation typed manually — deletion is irreversible.
+  var word = window.prompt("Необратимое действие. Для подтверждения введите имя пользователя точно:\n" + (account.fullName || ""));
+  if (word === null) { showToast("Удаление отменено", "info"); return false; }
+  if (authNormalizeName(word) !== authNormalizeName(account.fullName || "")) { showToast("Имя не совпало — удаление отменено", "info"); return false; }
+  try { saveRecoveryBackup(); } catch (e) { showToast("Удаление отменено: " + e.message, "error"); return false; }
+  var remaining = loadAuthAccounts().filter(function (a) { return a.id !== id; });
+  try { saveAuthAccounts(remaining); } catch (e) { showToast("Не удалось сохранить список аккаунтов: " + e.message, "error"); return false; }
+  if (isCurrent) {
+    clearAuthSession(); state.devUnlocked = false;
+    try { if (storage) storage.removeItem(SETTINGS_UNLOCK_KEY); } catch (e) {}
+    closeModal(); renderMaintenance(); openAuthGate(remaining.length ? "login" : "register");
+    lastFlushDaysSig = null; lastHomeworkSig = null; lastAccountSig = null;
+    render(); applyRoleRestrictions(); renderDeviceList();
+    showToast("Пользователь удалён. Требуется вход.", "success");
+  } else {
+    refreshDevPanel();
+    showToast("Пользователь «" + (account.fullName || "") + "» удалён с этого устройства", "success");
+  }
+  return true;
+}
 // Linked journal student for the signed-in account (added via «Зарегистрированный»).
 function linkedStudentForSession(session) {
   if (!session || !session.accountId) return null;
@@ -904,6 +981,7 @@ function refreshDevPanel() {
   dom.devToggleMaintenanceButton.textContent = state.settings.maintenance ? "Завершить обслуживание" : "Включить экран обслуживания";
   dom.devToggleMaintenanceButton.className = state.settings.maintenance ? "danger" : "secondary";
   renderDeviceList();
+  renderUserList();
   // Account section: show who is logged in on this device.
   var session = currentAuthSession();
   if (dom.authAccountInfo) dom.authAccountInfo.textContent = session
@@ -991,6 +1069,12 @@ function wireCoreEvents() {
   dom.devSaveNewsButton.addEventListener("click", function () { updateSettings({ news: dom.devNewsInput.value.trim().slice(0, 4000) }); try { if (storage) storage.removeItem(NEWS_DISMISS_KEY); } catch (e) {} renderNews(); showToast("Объявление сохранено", "success"); });
   dom.devClearNewsButton.addEventListener("click", function () { updateSettings({ news: "" }); refreshDevPanel(); });
   if (dom.devClearAllButton) dom.devClearAllButton.addEventListener("click", clearAllJournalData);
+  if (dom.refreshUserListButton) dom.refreshUserListButton.addEventListener("click", function () { renderUserList(); showToast("Список пользователей обновлён", "info"); });
+  if (dom.userList) dom.userList.addEventListener("click", function (e) {
+    var btn = e.target.closest(".user-remove");
+    if (!btn || !dom.userList.contains(btn)) return;
+    removeAuthAccount(btn.dataset.accountId);
+  });
   dom.newsCloseButton.addEventListener("click", function () { try { if (storage) storage.setItem(NEWS_DISMISS_KEY, state.settings.news.trim()); } catch (e) {} dom.newsBanner.classList.remove("visible"); });
   dom.exportBackupButton.addEventListener("click", exportBackup); dom.importBackupButton.addEventListener("click", function () { dom.importBackupInput.click(); }); dom.restoreBackupButton.addEventListener("click", restoreBackup); dom.printButton.addEventListener("click", function () { window.print(); });
   dom.importBackupInput.addEventListener("change", async function (e) {
