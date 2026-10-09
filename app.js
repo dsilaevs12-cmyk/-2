@@ -137,7 +137,8 @@ function cleanDeviceMeta(meta) {
     // not a base role — it stacks on top of any role. See DEVICE_ROLES below.
     var role = DEVICE_ROLE_KEYS.indexOf(entry.role) !== -1 ? entry.role : "teacher";
     var techAdmin = entry.techAdmin === true || entry.role === "admin"; // migrate legacy "admin" role → add-on flag
-    result[id] = { name: name, role: role, techAdmin: techAdmin, seenAt: Number.isFinite(seenAt) && seenAt > 0 ? seenAt : 0, updatedAt: Number.isFinite(updatedAt) && updatedAt > 0 ? updatedAt : 0 };
+    var roleExplicit = entry.roleExplicit === true;
+    result[id] = { name: name, role: role, roleExplicit: roleExplicit, techAdmin: techAdmin, seenAt: Number.isFinite(seenAt) && seenAt > 0 ? seenAt : 0, updatedAt: Number.isFinite(updatedAt) && updatedAt > 0 ? updatedAt : 0 };
   });
   return result;
 }
@@ -148,7 +149,7 @@ function mergeDeviceMeta(local, remote) {
     if (!existing) { result[id] = incoming; return; }
     var latest = (incoming.updatedAt || 0) >= (existing.updatedAt || 0) ? incoming : existing;
     var other = latest === incoming ? existing : incoming;
-    result[id] = { name: (latest.name || other.name || ""), role: DEVICE_ROLE_KEYS.indexOf(latest.role) !== -1 ? latest.role : (DEVICE_ROLE_KEYS.indexOf(other.role) !== -1 ? other.role : "teacher"), techAdmin: Boolean(latest.techAdmin || other.techAdmin), seenAt: Math.max(existing.seenAt || 0, incoming.seenAt || 0), updatedAt: Math.max(existing.updatedAt || 0, incoming.updatedAt || 0) };
+    result[id] = { name: (latest.name || other.name || ""), role: DEVICE_ROLE_KEYS.indexOf(latest.role) !== -1 ? latest.role : (DEVICE_ROLE_KEYS.indexOf(other.role) !== -1 ? other.role : "teacher"), roleExplicit: Boolean((latest === incoming ? incoming.roleExplicit : existing.roleExplicit) || (latest === existing ? existing.roleExplicit : incoming.roleExplicit)), techAdmin: Boolean(latest.techAdmin || other.techAdmin), seenAt: Math.max(existing.seenAt || 0, incoming.seenAt || 0), updatedAt: Math.max(existing.updatedAt || 0, incoming.updatedAt || 0) };
   });
   return result;
 }
@@ -166,6 +167,14 @@ var DEVICE_ROLES = {
 };
 var DEVICE_ROLE_KEYS = Object.keys(DEVICE_ROLES);
 function deviceRole(id) {
+  // Accounts created via the registration screen are students by default:
+  // if this device is logged in with such an account and no role was assigned
+  // explicitly yet, treat it as «Ученик».
+  var session = currentAuthSession();
+  if (id === deviceId && session && session.accountId && !session.roleExplicit) {
+    var entry0 = (state.deviceMeta || {})[id];
+    if (!entry0 || !entry0.roleExplicit) return "student";
+  }
   var entry = (state.deviceMeta || {})[id];
   return entry && DEVICE_ROLE_KEYS.indexOf(entry.role) !== -1 ? entry.role : "teacher";
 }
@@ -180,6 +189,7 @@ function setDeviceTechAdmin(id, enabled) {
   if (Boolean(entry.techAdmin) === Boolean(enabled)) return false;
   if (id !== deviceId && !(effectivePermissions().canManageDevices && syncWritable())) { showToast("Выдать статус «Тех. администрация» другому устройству может учитель/тех. админ с токеном", "warning"); return false; }
   entry.techAdmin = Boolean(enabled);
+  if (id === deviceId) { var sessT = currentAuthSession(); if (sessT) { sessT.roleExplicit = true; saveAuthSession(sessT); } } // tech-admin add-on also confirms the role explicitly
   entry.updatedAt = nextTimestamp();
   saveLocal(); scheduleSync(); renderDeviceList(); applyRoleRestrictions();
   showToast((enabled ? "Статус «Тех. администрация» выдан устройству " : "Статус «Тех. администрация» снят с устройства ") + (entry.name || id.slice(0, 4)), enabled ? "success" : "info");
@@ -191,6 +201,7 @@ function setDeviceRole(id, role) {
   var meta = state.deviceMeta || (state.deviceMeta = {});
   var entry = meta[id] || (meta[id] = { seenAt: 0 });
   entry.role = role;
+  entry.roleExplicit = true; // manual assignment overrides the "registered account → student" default
   entry.updatedAt = nextTimestamp();
   entry.seenAt = Math.max(entry.seenAt || 0, id === deviceId ? Date.now() : 0);
   saveLocal(); scheduleSync(); renderDeviceList(); applyRoleRestrictions();
@@ -426,8 +437,8 @@ async function handleAuthRegister() {
     saveAuthAccounts(accounts);
     saveAuthSession({ accountId: accounts[accounts.length - 1].id, fullName: fullName, method: "register", at: Date.now() });
     d.authRegisterForm.reset();
-    closeAuthGate(); render();
-    showToast("Аккаунт создан. Добро пожаловать, " + first + "!", "success");
+    closeAuthGate(); render(); applyRoleRestrictions(); renderDeviceList();
+    showToast("Аккаунт создан. Добро пожаловать, " + first + "! Роль по умолчанию — «Ученик».", "success");
   } catch (error) {
     d.authRegisterError.textContent = error.message || "Не удалось создать аккаунт.";
   } finally {
@@ -1828,7 +1839,7 @@ function renderDeviceList() {
       option.title = DEVICE_ROLES[key].hint;
       roleSelect.appendChild(option);
     });
-    roleSelect.value = DEVICE_ROLE_KEYS.indexOf(entry.role) !== -1 ? entry.role : "teacher";
+    roleSelect.value = deviceRole(id); // reflects the effective role incl. "registered account → student" default
     roleSelect.setAttribute("aria-label", "Роль устройства: " + (entry.name || id.slice(0, 4)));
     if (id !== deviceId && !syncWritable()) roleSelect.disabled = true;
     roleSelect.title = id === deviceId ? "Ваша роль на этом устройстве" : "Назначить роль этому устройству (нужен токен для отправки)";
