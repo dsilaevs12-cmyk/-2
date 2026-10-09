@@ -790,6 +790,9 @@ function linkedStudentForSession(session) {
   }
   return null;
 }
+// The account screen can be opened without a signed-in session (e.g. the
+// teacher uses «Журнал» and taps «Аккаунт»): in that case we show the device
+// identity plus a call-to-action instead of an empty panel.
 function renderAccountPanel() {
   var body = dom.accountCardBody;
   if (!body) return;
@@ -809,10 +812,16 @@ function renderAccountPanel() {
   var html = '<dl class="account-list">';
   rows.forEach(function (r) { html += "<div><dt>" + escapeHtml(r[0]) + "</dt><dd>" + escapeHtml(r[1]) + "</dd></div>"; });
   html += "</dl>";
+  if (!session) {
+    html += '<p class="help-text">На этом устройстве нет активной учётной записи. Чтобы создать её, используйте кнопку ниже — после этого откроется экран регистрации или входа.</p>' +
+      '<div class="account-actions"><button id="accountSignInButton" type="button">Войти или зарегистрироваться</button></div>';
+  }
   if (perms.role === "student") html += '<p class="help-text">Роль «Ученик»: доступны только домашние задания и своя посещаемость.</p>';
   else if (perms.role === "observer") html += '<p class="help-text">Роль «Наблюдатель»: полный обзор без права редактирования.</p>';
   else html += '<p class="help-text">Роль «Учитель»: полный доступ к журналу, ученикам и домашним заданиям.</p>';
   body.innerHTML = html;
+  var signInBtn = document.getElementById("accountSignInButton");
+  if (signInBtn) signInBtn.addEventListener("click", function () { closeAccountView(); openAuthGate(loadAuthAccounts().length ? "login" : "register"); });
   if (dom.accountChangeRoleButton) {
     var canManage = perms.canManageDevices;
     dom.accountChangeRoleButton.disabled = !canManage;
@@ -820,23 +829,22 @@ function renderAccountPanel() {
   }
   if (dom.accountLogoutButton) dom.accountLogoutButton.disabled = !session;
 }
+// The account screen hides the journal content via a CSS class instead of
+// setting `hidden` on every child element — blanket `hidden` broke panels that
+// rely on custom display rules (details/summary, [open] sections), which made
+// the action buttons of the account panel disappear.
 function openAccountView() {
   accountNavActive = true;
-  if (dom.accountPanel) dom.accountPanel.hidden = false;
   renderAccountPanel();
   var app = document.getElementById("journalApp");
-  if (app) Array.prototype.forEach.call(app.querySelectorAll(":scope > *"), function (el) { el.hidden = true; });
+  if (app) app.classList.add("account-view");
   if (dom.accountPanel) dom.accountPanel.hidden = false;
-  if (app) app.setAttribute("data-account-view", "true");
   window.scrollTo({ top: 0, behavior: "auto" });
 }
 function closeAccountView() {
   accountNavActive = false;
   var app = document.getElementById("journalApp");
-  if (app) {
-    app.removeAttribute("data-account-view");
-    Array.prototype.forEach.call(app.querySelectorAll(":scope > *"), function (el) { el.hidden = false; });
-  }
+  if (app) app.classList.remove("account-view");
   if (dom.accountPanel) dom.accountPanel.hidden = true;
   if (typeof renderMaintenance === "function") renderMaintenance();
 }

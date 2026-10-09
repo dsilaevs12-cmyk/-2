@@ -2728,3 +2728,11 @@ body[data-tech-admin] .role-banner{background:#dff1ea;border-color:#176c5c;color
   .account-list dd { text-align: left; }
   .account-actions { flex-direction: column; }
 }
+
+/* ---------- Account view (sidebar «Аккаунт») ---------- */
+/* Hide journal content while the account screen is open, but never touch the
+   sidebar or the role banner. Using CSS instead of blanket [hidden] keeps
+   panels with custom display rules intact. */
+/* Hide the journal column and show only the account card. */
+#journalApp.account-view .journal-content { display: none !important; }
+#journalApp.account-view #accountPanel { display: block !important; }
