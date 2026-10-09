@@ -450,7 +450,7 @@ async function handleAuthRegister() {
     saveAuthAccounts(accounts);
     saveAuthSession({ accountId: accounts[accounts.length - 1].id, fullName: fullName, method: "register", at: Date.now() });
     d.authRegisterForm.reset();
-    closeAuthGate(); render(); applyRoleRestrictions(); renderDeviceList();
+    closeAuthGate(); lastFlushDaysSig = null; lastHomeworkSig = null; lastAccountSig = null; render(); applyRoleRestrictions(); renderDeviceList();
     showToast("Аккаунт создан. Добро пожаловать, " + first + "! Роль по умолчанию — «Ученик».", "success");
   } catch (error) {
     d.authRegisterError.textContent = error.message || "Не удалось создать аккаунт.";
@@ -513,7 +513,7 @@ async function handleAuthLogin(event) {
   saveAuthSession({ accountId: account.id, fullName: account.fullName, method: method, at: Date.now() });
   authGateState.pending = null;
   d.authLoginForm.reset(); updateAuth2faStep();
-  closeAuthGate(); render();
+  closeAuthGate(); lastFlushDaysSig = null; lastHomeworkSig = null; lastAccountSig = null; render();
   showToast("С возвращением, " + account.fullName + "! Вход подтверждён.", "success");
 }
 function updateAuth2faStep() {
@@ -745,15 +745,35 @@ function renderNews() {
 // many times render()/renderOffline() are requested within one frame, the
 // heavy work runs exactly once per frame.
 var renderScheduled = false, renderOfflineScheduled = false;
+// Skip re-rendering panels whose inputs (state signature) have not changed.
+// On low-end phones the full pipeline per click rebuilt homework/offline/
+// account DOM every frame even when nothing in them had changed.
+var lastFlushDaysSig = null, lastHomeworkSig = null, lastAccountSig = null;
 function flushRender() {
   renderScheduled = false;
   var focused = document.activeElement, days = getDisplayedDays();
-  renderViewControls(days); dom.printMonthTitle.textContent = dom.monthTitle.textContent;
-  renderHeader(days); renderBody(days); renderSummary(days); renderStudentCard(); renderProject();
-  dom.searchResultsInfo.textContent = state.searchQuery.trim() ? "Найдено " + getFilteredStudents().length + " из " + getVisibleStudents().length : "Всего " + getVisibleStudents().length;
-  dom.clearSearchButton.hidden = !state.searchQuery; dom.versionButtonText.textContent = state.settings.versionText; dom.versionButton.setAttribute("aria-label", state.settings.versionText + ". Открыть настройки по коду"); if (dom.journalEdition) dom.journalEdition.textContent = settingsVersionText(); renderNews(); renderMaintenance(); renderHomework(); renderOfflineNow();
-  if (studentAddMode === "registered") populateStudentAccountSelect();
-  renderAccountPanel();
+  var daysSig = state.viewMode + "|" + state.selectedDate + "|" + state.selectedMonth + "|" + state.selectedClass + "|" + state.searchQuery;
+  if (daysSig !== lastFlushDaysSig || !dom.tableBody.rows.length) {
+    lastFlushDaysSig = daysSig;
+    renderViewControls(days); dom.printMonthTitle.textContent = dom.monthTitle.textContent;
+    renderHeader(days); renderBody(days); renderSummary(days); renderStudentCard(); renderProject();
+    dom.searchResultsInfo.textContent = state.searchQuery.trim() ? "Найдено " + getFilteredStudents().length + " из " + getVisibleStudents().length : "Всего " + getVisibleStudents().length;
+    dom.clearSearchButton.hidden = !state.searchQuery;
+    if (studentAddMode === "registered") populateStudentAccountSelect();
+  }
+  dom.versionButtonText.textContent = state.settings.versionText; dom.versionButton.setAttribute("aria-label", state.settings.versionText + ". Открыть настройки по коду"); if (dom.journalEdition) dom.journalEdition.textContent = settingsVersionText();
+  renderNews(); renderMaintenance();
+  // Homework panel: rebuild only when its data actually changed.
+  var hwSigReal = (state.homework || []).map(function (h) { return h.id + ":" + (h.deleted ? 1 : 0) + ":" + String(h.text || "") + ":" + (h.dueDate || "") + ":" + (h.classId || ""); }).join("#") + "|" + state.selectedClass + "|" + syncReadOnly();
+  if (hwSigReal !== lastHomeworkSig) { lastHomeworkSig = hwSigReal; renderHomework(); }
+  renderOfflineNow();
+  // Account panel is hidden most of the time — build its HTML only while open.
+  var accSig = (accountNavActive ? "1" : "0");
+  if (accSig === "1") {
+    var s = currentAuthSession(), m = (state.deviceMeta || {})[deviceId] || {}, p = effectivePermissions();
+    var sig2 = JSON.stringify([p.role, p.techAdmin, p.canManageDevices, s && s.accountId, s && s.fullName, s && s.method, s && s.at, m.name, m.techAdmin]);
+    if (sig2 !== lastAccountSig) { lastAccountSig = sig2; renderAccountPanel(); }
+  } else if (lastAccountSig !== null) { lastAccountSig = null; }
   if (!activeModal && focused && focused.dataset && focused.dataset.dateKey && !focused.isConnected) { var replacement = document.querySelector('.attendance-button[data-student-id="' + focused.dataset.studentId + '"][data-date-key="' + focused.dataset.dateKey + '"]'); if (replacement) replacement.focus(); }
 }
 
@@ -794,6 +814,7 @@ function linkedStudentForSession(session) {
 // teacher uses «Журнал» and taps «Аккаунт»): in that case we show the device
 // identity plus a call-to-action instead of an empty panel.
 function renderAccountPanel() {
+  lastAccountSig = null; // explicit callers must always get fresh content
   var body = dom.accountCardBody;
   if (!body) return;
   var perms = effectivePermissions();
@@ -1013,7 +1034,16 @@ function init() {
   // or registration does the journal unlock for this device.
   wireAuthGate();
   ["authLogoutButton", "authAccountInfo"].forEach(function (id) { dom[id] = document.getElementById(id); });
-  ["accountPanel", "accountCardBody", "accountChangeRoleButton", "accountLogoutButton"].forEach(function (id) { dom[id] = document.getElementById(id); });
+  ["accountPanel", "accountCardBody", "accountChangeRoleButton", "accountLogoutButton", "accountBackButton"].forEach(function (id) { dom[id] = document.getElementById(id); });
+  if (dom.accountBackButton) dom.accountBackButton.addEventListener("click", function () {
+    closeAccountView();
+    var nav = document.getElementById("glassNavigation");
+    if (nav) nav.querySelectorAll("[data-nav]").forEach(function (item) {
+      var on = item.dataset.nav === "journal";
+      item.classList.toggle("is-active", on);
+      if (on) item.setAttribute("aria-current", "location"); else item.removeAttribute("aria-current");
+    });
+  });
   if (dom.accountChangeRoleButton) dom.accountChangeRoleButton.addEventListener("click", changeOwnDeviceRole);
   if (dom.accountLogoutButton) dom.accountLogoutButton.addEventListener("click", function () {
     if (!confirm("Выйти из аккаунта на этом устройстве? Журнал снова потребует входа или регистрации.")) return;
@@ -1369,6 +1399,7 @@ function clearClassHomework(){
   commitProject(keys);showToast('Задания убраны','success');
 }
 function renderHomework(){
+  lastHomeworkSig = null; // direct callers bypass the flushRender cache
   if(!dom.hwPanel||!dom.hwPanel.isConnected)return;
   var cls=state.selectedClass||'class-main';
   if(dom.hwClassName)dom.hwClassName.textContent=named('classes',cls);

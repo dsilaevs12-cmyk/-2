@@ -2714,7 +2714,9 @@ body[data-tech-admin] .role-banner{background:#dff1ea;border-color:#176c5c;color
 .auth-2fa-option input[type="radio"] { appearance: auto; -webkit-appearance: radio; display: block; visibility: visible; opacity: 1; width: 18px; height: 18px; margin: 0; }
 
 /* ---------- Account panel (sidebar «Аккаунт») ---------- */
-.account-panel { margin: 8px 0 16px; padding: 20px 22px; }
+.account-panel { margin: 8px 0 16px; padding: 20px 22px; border: 1px solid var(--border); border-radius: var(--radius-md, 12px); background: var(--panel-bg, #fff); box-shadow: var(--shadow-sm); }
+.account-title { margin: 0 0 14px; font-size: 17px; color: var(--text-strong); font-weight: 680; }
+.account-card { padding: 4px 0; }
 .account-body { padding: 4px 0; }
 .account-list { display: grid; gap: 10px; margin: 0; }
 .account-list > div { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-md, 12px); background: var(--surface, rgba(127,127,127,.06)); }
