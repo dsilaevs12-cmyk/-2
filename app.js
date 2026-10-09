@@ -735,10 +735,12 @@ function clearAllJournalData() {
   var liveHw = (state.homework || []).filter(function (h) { return !h.deleted; }).length;
   if (!liveStudents && !liveLessons && !liveHw && !Object.keys(state.attendance || {}).length) { showToast("Журнал уже пуст — очищать нечего", "info"); return; }
   if (!window.confirm("Полная очистка: удалить ВСЕХ учеников (" + liveStudents + "), все отметки и пропуски, домашние задания (" + liveHw + ") и занятия (" + liveLessons + ") во всех классах?\nКлассы и предметы останутся. Перед удалением будет сохранена резервная копия.")) return;
-  executeFullClear();
+  // Second confirmation must be synchronous (prompt right after confirm).
+  var word = window.prompt("Это необратимое действие (отменить можно только восстановлением копии).\nДля подтверждения введите слово ОЧИСТИТЬ:");
+  if (word === null) return;
+  if (String(word).trim().toUpperCase() !== "ОЧИСТИТЬ") { showToast("Очистка отменена: код подтверждения не совпал", "info"); return; }
+  runFullClear();
 }
-// Deferred to the project layer so it can use the extended payload/queue APIs.
-function executeFullClear() { setTimeout(runFullClear, 0); }
 function restoreBackup() {
   if (!effectivePermissions().canManageDevices) { showToast("Восстановление копий доступно учителю или тех. администрации", "warning"); return; }
   try { var backups = storage && JSON.parse(storage.getItem(BACKUP_KEY) || "[]"); if (!backups || !backups.length) { showToast("Пока нет автоматических резервных копий", "warning"); return; }
@@ -2278,18 +2280,18 @@ if (document.readyState === 'loading') document.addEventListener('DOMContentLoad
 function runFullClear(){
   try{
     if(!effectivePermissions().canEditJournal||!effectivePermissions().canManageDevices){showToast("Полная очистка доступна учителю или тех. администрации","warning");return;}
-    var word=window.prompt("Это необратимое действие (отменить можно только восстановлением копии).\nДля подтверждения введите слово ОЧИСТИТЬ:");
-    if(word===null)return;
-    if(String(word).trim().toUpperCase()!=="ОЧИСТИТЬ"){showToast("Очистка отменена: код подтверждения не совпал","info");return;}
     saveRecoveryBackup();
-    var time=nextTimestamp(),keys=[];
+    // Mark every student, lesson, homework record deleted across ALL classes and
+    // reset all attendance/lesson marks. Then hand the changed records to the
+    // standard commit path (markChanged(keys)) so clocks, offline queue and sync
+    // are updated exactly like any other edit. Classes and subjects stay intact.
+    var keys=[];
     state.students.forEach(function(s){if(!s.deleted){s.deleted=true;s.updatedAt=nextTimestamp();s.actor=deviceId;keys.push("students/"+s.id);}});
-    Object.keys(state.attendance||{}).forEach(function(k){state.attendance[k]={status:STATUS_UNMARKED,updatedAt:nextTimestamp(),actor:deviceId};keys.push("attendance/"+k);});
+    Object.keys(state.attendance||{}).forEach(function(k){var v=state.attendance[k];if(v&&v.status!==STATUS_UNMARKED){state.attendance[k]={status:STATUS_UNMARKED,updatedAt:nextTimestamp(),actor:deviceId};keys.push("attendance/"+k);}});
     (state.lessons||[]).forEach(function(l){if(!l.deleted){l.deleted=true;l.updatedAt=nextTimestamp();l.actor=deviceId;keys.push("lessons/"+l.id);}});
     (state.homework||[]).forEach(function(h){if(!h.deleted){h.deleted=true;h.updatedAt=nextTimestamp();h.actor=deviceId;keys.push(homeworkListKey+"/"+h.id);}});
-    Object.keys(state.lessonMarks||{}).forEach(function(k){state.lessonMarks[k]={status:"unmarked",updatedAt:nextTimestamp(),actor:deviceId};keys.push("lessonMarks/"+k);});
-    var flat=flattenRecords(buildPayload());
-    keys.forEach(function(k){if(offline.queue[k])offline.queue[k].done=false;else if(flat[k])offline.queue[k]={op:generateId()+"-"+flat[k].updatedAt,time:flat[k].updatedAt,done:false};});
+    Object.keys(state.lessonMarks||{}).forEach(function(k){var v=state.lessonMarks[k];if(v&&v.status!=="unmarked"){state.lessonMarks[k]={status:"unmarked",updatedAt:nextTimestamp(),actor:deviceId};keys.push("lessonMarks/"+k);}});
+    trackedPayload=buildPayload();
     markChanged(keys);saveLocal(true);render();scheduleSync();
     showToast("Журнал очищен: удалены все ученики, отметки, домашние задания и занятия. Восстановить: «Восстановить последнюю»","success");
   }catch(e){console.error(e);showToast("Очистка не выполнена: "+e.message,"error");}
