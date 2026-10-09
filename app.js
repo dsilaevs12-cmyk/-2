@@ -509,13 +509,56 @@ function updateSettings(patch) {
 function getVisibleStudents() { return state.students.filter(function (s) { return !s.deleted && (s.classId || "class-main") === (state.selectedClass || "class-main"); }).sort(function (a, b) { return a.name.localeCompare(b.name, "ru") || a.id.localeCompare(b.id); }); }
 function getStudentById(id) { return state.students.find(function (s) { return s.id === id; }) || null; }
 function getFilteredStudents() { var q = state.searchQuery.trim().toLocaleLowerCase("ru"); return getVisibleStudents().filter(function (s) { return !q || s.name.toLocaleLowerCase("ru").includes(q); }); }
+var studentAddMode = "new"; // "new" | "registered"
+function setStudentAddMode(mode) {
+  studentAddMode = mode === "registered" ? "registered" : "new";
+  var btnNew = document.getElementById("studentModeNew"), btnReg = document.getElementById("studentModeRegistered");
+  var wrapNew = document.getElementById("studentAddNewWrap"), wrapReg = document.getElementById("studentAddRegisteredWrap");
+  if (btnNew) { btnNew.classList.toggle("is-active", studentAddMode === "new"); btnNew.setAttribute("aria-pressed", String(studentAddMode === "new")); }
+  if (btnReg) { btnReg.classList.toggle("is-active", studentAddMode === "registered"); btnReg.setAttribute("aria-pressed", String(studentAddMode === "registered")); }
+  if (wrapNew) wrapNew.hidden = studentAddMode !== "new";
+  if (wrapReg) wrapReg.hidden = studentAddMode !== "registered";
+  if (studentAddMode === "registered") populateStudentAccountSelect();
+  else if (dom.studentNameInput) dom.studentNameInput.focus();
+}
+function populateStudentAccountSelect() {
+  var sel = document.getElementById("studentAccountSelect"); if (!sel) return;
+  var accounts = loadAuthAccounts().slice().sort(function (a, b) { return String(a.fullName || "").localeCompare(String(b.fullName || ""), "ru"); });
+  var existingNames = {}; getVisibleStudents().concat(state.students.filter(function(s){return !s.deleted;})).forEach(function (s) { existingNames[authNormalizeName(s.name)] = true; });
+  var available = accounts.filter(function (a) { return !existingNames[authNormalizeName(a.fullName)]; });
+  sel.innerHTML = "";
+  if (!available.length) {
+    var opt = document.createElement("option"); opt.value = ""; opt.textContent = accounts.length ? "Все аккаунты уже в журнале" : "Нет зарегистрированных аккаунтов"; sel.appendChild(opt);
+  } else {
+    available.forEach(function (a) { var opt = document.createElement("option"); opt.value = a.id; opt.textContent = a.fullName; sel.appendChild(opt); });
+  }
+  var hint = document.getElementById("studentAccountHint");
+  if (hint) hint.textContent = accounts.length ? ("Всего аккаунтов на устройстве: " + accounts.length + ". Доступных для добавления: " + available.length + ".") : "Аккаунты создаются на экране входа/регистрации этого устройства.";
+}
 function addStudent() {
   if (!effectivePermissions().canEditJournal) { showToast("Роль «" + DEVICE_ROLES[deviceRole(deviceId)].label + "»: добавление учеников недоступно", "warning"); return; }
-  var name = dom.studentNameInput.value.trim().replace(/\s+/g, " ");
-  if (!name) { dom.studentNameInput.focus(); showToast("Введите имя ученика", "warning"); return; }
+  var name, linkedAccountId = null;
+  if (studentAddMode === "registered") {
+    var sel = document.getElementById("studentAccountSelect");
+    var accId = sel && sel.value;
+    if (!accId) { showToast("Сначала выберите зарегистрированный аккаунт", "warning"); populateStudentAccountSelect(); return; }
+    var account = loadAuthAccounts().find(function (a) { return a.id === accId; });
+    if (!account) { showToast("Аккаунт не найден — обновите список", "warning"); populateStudentAccountSelect(); return; }
+    name = String(account.fullName || "").trim().replace(/\s+/g, " ");
+    if (getVisibleStudents().some(function (s) { return authNormalizeName(s.name) === authNormalizeName(name); })) { showToast("Этот аккаунт уже добавлен в журнал", "warning"); populateStudentAccountSelect(); return; }
+    linkedAccountId = account.id;
+  } else {
+    name = dom.studentNameInput.value.trim().replace(/\s+/g, " ");
+    if (!name) { dom.studentNameInput.focus(); showToast("Введите имя ученика", "warning"); return; }
+  }
   if (name.length > 200) { showToast("Имя должно быть короче 200 символов", "warning"); return; }
-  state.students.push({ id: generateId(), name: name, updatedAt: nextTimestamp(), actor: deviceId, deleted: false, classId: state.selectedClass || "class-main" });
-  dom.studentNameInput.value = ""; markChanged(["students/"+state.students[state.students.length-1].id]); saveLocal(); render(); scheduleSync(); dom.studentNameInput.focus(); showToast("Ученик добавлен", "success");
+  var student = { id: generateId(), name: name, updatedAt: nextTimestamp(), actor: deviceId, deleted: false, classId: state.selectedClass || "class-main" };
+  if (linkedAccountId) student.accountId = linkedAccountId;
+  state.students.push(student);
+  if (dom.studentNameInput) dom.studentNameInput.value = "";
+  markChanged(["students/"+student.id]); saveLocal(); render(); scheduleSync();
+  if (studentAddMode === "registered") populateStudentAccountSelect(); else dom.studentNameInput.focus();
+  showToast(linkedAccountId ? "Зарегистрированный ученик добавлен" : "Ученик добавлен", "success");
 }
 function renameStudent(id) {
   if (!effectivePermissions().canEditJournal) return;
@@ -622,6 +665,7 @@ function render() {
   renderHeader(days); renderBody(days); renderSummary(days); renderStudentCard(); renderProject();
   dom.searchResultsInfo.textContent = state.searchQuery.trim() ? "Найдено " + getFilteredStudents().length + " из " + getVisibleStudents().length : "Всего " + getVisibleStudents().length;
   dom.clearSearchButton.hidden = !state.searchQuery; dom.versionButtonText.textContent = state.settings.versionText; dom.versionButton.setAttribute("aria-label", state.settings.versionText + ". Открыть настройки по коду"); if (dom.journalEdition) dom.journalEdition.textContent = settingsVersionText(); renderNews(); renderMaintenance(); renderHomework(); renderOffline();
+  if (studentAddMode === "registered") populateStudentAccountSelect();
   if (!activeModal && focused && focused.dataset && focused.dataset.dateKey && !focused.isConnected) { var replacement = document.querySelector('.attendance-button[data-student-id="' + focused.dataset.studentId + '"][data-date-key="' + focused.dataset.dateKey + '"]'); if (replacement) replacement.focus(); }
 }
 function refreshDevPanel() {
@@ -678,6 +722,9 @@ function restoreBackup() {
 function wireCoreEvents() {
   dom.addStudentButton.addEventListener("click", addStudent);
   dom.studentNameInput.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); addStudent(); } });
+  var studentModeNewBtn = document.getElementById("studentModeNew"), studentModeRegBtn = document.getElementById("studentModeRegistered");
+  if (studentModeNewBtn) studentModeNewBtn.addEventListener("click", function () { setStudentAddMode("new"); });
+  if (studentModeRegBtn) studentModeRegBtn.addEventListener("click", function () { setStudentAddMode("registered"); });
   dom.monthPicker.addEventListener("change", function (e) { try { var d = parseMonth(e.target.value); state.selectedMonth = e.target.value; state.selectedDate = formatDateKey(d); render(); } catch (error) { e.target.value = state.selectedMonth; } });
   dom.previousMonthButton.addEventListener("click", function () { changePeriod(-1); }); dom.nextMonthButton.addEventListener("click", function () { changePeriod(1); }); dom.todayButton.addEventListener("click", goToToday);
   dom.searchInput.addEventListener("input", function (e) { state.searchQuery = e.target.value; render(); });

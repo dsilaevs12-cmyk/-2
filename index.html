@@ -40,7 +40,22 @@
     <div class="panel-heading"><div><h2>Журнал класса</h2><p>Нажмите на имя, чтобы открыть карточку ученика.</p></div><div id="viewSwitcher" class="view-switcher" role="group" aria-label="Вид журнала"><button type="button" data-view="day" aria-pressed="false">День</button><button type="button" data-view="week" aria-pressed="false">Неделя</button><button type="button" data-view="month" aria-pressed="true">Месяц</button></div></div>
     <div class="class-toolbar"><label for="classPicker">Класс</label><select id="classPicker"></select><button id="addClassButton" class="secondary" type="button">+ Класс</button><button id="toggleStudentEntryButton" class="secondary mobile-add-student" type="button" aria-expanded="false" aria-controls="studentEntry">+ Ученик</button></div>
     <div class="controls">
-      <div class="student-entry" id="studentEntry"><label class="visually-hidden" for="studentName">Имя и фамилия ученика</label><input id="studentName" type="text" placeholder="Имя и фамилия ученика" autocomplete="off" maxlength="200"><button id="addStudentButton" type="button">Добавить ученика</button></div>
+      <div class="student-entry" id="studentEntry">
+        <div class="student-add-mode" role="radiogroup" aria-label="Способ добавления ученика">
+          <button id="studentModeNew" type="button" class="student-mode-btn is-active" aria-pressed="true">Новый ученик</button>
+          <button id="studentModeRegistered" type="button" class="student-mode-btn" aria-pressed="false">Зарегистрированный</button>
+        </div>
+        <div id="studentAddNewWrap">
+          <label class="visually-hidden" for="studentName">Имя и фамилия ученика</label>
+          <input id="studentName" type="text" placeholder="Имя и фамилия ученика" autocomplete="off" maxlength="200">
+        </div>
+        <div id="studentAddRegisteredWrap" hidden>
+          <label class="visually-hidden" for="studentAccountSelect">Выберите зарегистрированный аккаунт</label>
+          <select id="studentAccountSelect"></select>
+          <div class="student-account-hint" id="studentAccountHint">Аккаунты создаются на экране входа/регистрации этого устройства.</div>
+        </div>
+        <button id="addStudentButton" type="button">Добавить ученика</button>
+      </div>
       <div class="month-navigation"><button id="previousMonthButton" class="secondary" type="button" aria-label="Предыдущий период">←</button><label class="visually-hidden" for="monthPicker">Месяц журнала</label><input id="monthPicker" type="month" min="1000-01" max="9999-12"><label class="visually-hidden" for="datePicker">Дата журнала</label><input id="datePicker" type="date" min="1000-01-01" max="9999-12-31" hidden><button id="nextMonthButton" class="secondary" type="button" aria-label="Следующий период">→</button><button id="todayButton" class="secondary" type="button">Сегодня</button></div>
     </div>
     <div class="search-block"><label for="searchInput">Найти ученика</label><input id="searchInput" type="search" placeholder="Найти ученика" autocomplete="off"><button id="clearSearchButton" class="secondary" type="button" hidden>Сбросить</button><span id="searchResultsInfo" class="search-results-info" role="status"></span></div>
