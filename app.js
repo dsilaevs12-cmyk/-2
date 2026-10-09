@@ -625,7 +625,7 @@ function setAttendanceStatus(status) {
   var student = getStudentById(attendanceModalState.studentId); if (!student || student.deleted) { closeAttendanceModal(); return; }
   var key = student.id + "_" + attendanceModalState.dateKey;
   state.attendance[key] = { status: status, updatedAt: nextTimestamp(), actor: deviceId };
-  markChanged(["attendance/"+key]); saveLocal(); render(); scheduleSync(); closeAttendanceModal();
+  markChanged(["attendance/"+key]); saveLocal(); renderNow(); scheduleSync(); closeAttendanceModal();
 }
 function changeMonth(offset) { var d = parseMonth(state.selectedMonth); d.setMonth(d.getMonth() + offset); if (d.getFullYear() < 1000 || d.getFullYear() > 9999) return; state.selectedMonth = getMonthString(d); state.selectedDate = formatDateKey(d); render(); }
 function element(tag, className, text) { var el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; }
@@ -670,14 +670,39 @@ function renderNews() {
   var news = state.settings.news.trim(), dismissed = null; try { dismissed = storage && storage.getItem(NEWS_DISMISS_KEY); } catch (e) {}
   dom.newsText.textContent = news; dom.newsBanner.classList.toggle("visible", !!news && news !== dismissed);
 }
-function render() {
+/* ---------- Render scheduling (performance) ---------- */
+// A single click used to trigger several full re-renders in a row
+// (markChanged -> render, saveLocal -> ... -> render, scheduleSync ->
+// updateSyncUI -> renderOffline). On phones this produced visible jank.
+// All callers now go through requestAnimationFrame coalescing: no matter how
+// many times render()/renderOffline() are requested within one frame, the
+// heavy work runs exactly once per frame.
+var renderScheduled = false, renderOfflineScheduled = false;
+function flushRender() {
+  renderScheduled = false;
   var focused = document.activeElement, days = getDisplayedDays();
   renderViewControls(days); dom.printMonthTitle.textContent = dom.monthTitle.textContent;
   renderHeader(days); renderBody(days); renderSummary(days); renderStudentCard(); renderProject();
   dom.searchResultsInfo.textContent = state.searchQuery.trim() ? "Найдено " + getFilteredStudents().length + " из " + getVisibleStudents().length : "Всего " + getVisibleStudents().length;
-  dom.clearSearchButton.hidden = !state.searchQuery; dom.versionButtonText.textContent = state.settings.versionText; dom.versionButton.setAttribute("aria-label", state.settings.versionText + ". Открыть настройки по коду"); if (dom.journalEdition) dom.journalEdition.textContent = settingsVersionText(); renderNews(); renderMaintenance(); renderHomework(); renderOffline();
+  dom.clearSearchButton.hidden = !state.searchQuery; dom.versionButtonText.textContent = state.settings.versionText; dom.versionButton.setAttribute("aria-label", state.settings.versionText + ". Открыть настройки по коду"); if (dom.journalEdition) dom.journalEdition.textContent = settingsVersionText(); renderNews(); renderMaintenance(); renderHomework(); renderOfflineNow();
   if (studentAddMode === "registered") populateStudentAccountSelect();
   if (!activeModal && focused && focused.dataset && focused.dataset.dateKey && !focused.isConnected) { var replacement = document.querySelector('.attendance-button[data-student-id="' + focused.dataset.studentId + '"][data-date-key="' + focused.dataset.dateKey + '"]'); if (replacement) replacement.focus(); }
+}
+function render() {
+  if (renderScheduled) return;
+  renderScheduled = true;
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(flushRender);
+  else flushRender();
+}
+// Immediate variant for flows that read the DOM right after rendering
+// (focus restoration, modal close chains, initialization).
+function renderNow() { renderScheduled = false; flushRender(); }
+// Search input is debounced: typing used to rebuild the whole table on every
+// keystroke, which lagged badly on month view with many students.
+var searchRenderTimer = null;
+function scheduleSearchRender() {
+  clearTimeout(searchRenderTimer);
+  searchRenderTimer = setTimeout(function () { searchRenderTimer = null; render(); }, 120);
 }
 function refreshDevPanel() {
   dom.devVersionTextInput.value = state.settings.versionText; dom.devMaintenanceMessageInput.value = state.settings.maintenanceMessage; dom.devNewsInput.value = state.settings.news;
@@ -755,8 +780,8 @@ function wireCoreEvents() {
   if (studentModeRegBtn) studentModeRegBtn.addEventListener("click", function () { setStudentAddMode("registered"); });
   dom.monthPicker.addEventListener("change", function (e) { try { var d = parseMonth(e.target.value); state.selectedMonth = e.target.value; state.selectedDate = formatDateKey(d); render(); } catch (error) { e.target.value = state.selectedMonth; } });
   dom.previousMonthButton.addEventListener("click", function () { changePeriod(-1); }); dom.nextMonthButton.addEventListener("click", function () { changePeriod(1); }); dom.todayButton.addEventListener("click", goToToday);
-  dom.searchInput.addEventListener("input", function (e) { state.searchQuery = e.target.value; render(); });
-  dom.clearSearchButton.addEventListener("click", function () { state.searchQuery = ""; dom.searchInput.value = ""; render(); dom.searchInput.focus(); });
+  dom.searchInput.addEventListener("input", function (e) { state.searchQuery = e.target.value; scheduleSearchRender(); });
+  dom.clearSearchButton.addEventListener("click", function () { state.searchQuery = ""; dom.searchInput.value = ""; renderNow(); dom.searchInput.focus(); });
   dom.tableBody.addEventListener("click", function (e) { var btn = e.target.closest("button"); if (!btn || !dom.tableBody.contains(btn)) return; if (btn.dataset.dateKey) openAttendanceModal(btn.dataset.studentId, btn.dataset.dateKey); else if (btn.dataset.action === "card") openStudentCard(btn.dataset.studentId); else if (btn.dataset.action === "rename") renameStudent(btn.dataset.studentId); else if (btn.dataset.action === "remove") removeStudent(btn.dataset.studentId); });
   dom.attCloseButton.addEventListener("click", closeAttendanceModal);
   dom.attOptions.addEventListener("click", function (e) { var btn = e.target.closest("[data-status]"); if (btn) setAttendanceStatus(btn.dataset.status); });
@@ -881,15 +906,15 @@ function renderViewControls(days) {
 function setViewMode(mode) {
   if (!["day", "week", "month"].includes(mode)) return;
   state.viewMode = mode; try { if (storage) storage.setItem(VIEW_PREFERENCE_KEY, mode); } catch (error) {}
-  render(); dom.attendanceTableWrapper.scrollLeft = 0;
+  renderNow(); dom.attendanceTableWrapper.scrollLeft = 0;
 }
 function changePeriod(offset) {
   if (state.viewMode === "month") { changeMonth(offset); return; }
   var date = selectedDate(); date.setDate(date.getDate() + offset * (state.viewMode === "week" ? 7 : 1));
-  if (setSelectedDate(date)) render();
+  if (setSelectedDate(date)) renderNow();
 }
 function goToToday() {
-  setSelectedDate(new Date()); render();
+  setSelectedDate(new Date()); renderNow();
   var wrapper = dom.attendanceTableWrapper;
   if (state.viewMode !== "month") { wrapper.scrollLeft = 0; return; }
   requestAnimationFrame(function () {
@@ -1235,9 +1260,12 @@ function checkSyncConflicts(remote,local){
 }
 function resolveConflict(key,index){var choices=offline.conflicts[key];if(!choices||!choices[index])return;var selected=copy(choices[index]),clock={};choices.forEach(function(v){clock=unionClocks(clock,cleanClock(v.clock,v.updatedAt));});var time=nextTimestamp();clock[causalActor()]=time;selected.clock=clock;selected.updatedAt=time;selected.actor=deviceId;var data=buildPayload();putRecord(data,key,selected);applyMergedToState(data);offline.queue[key]={op:generateId()+'-'+time,time:time,done:false};delete offline.conflicts[key];state.revision++;syncRuntime.hasPendingChanges=true;saveLocal();render();scheduleSync();showToast('Выбранная запись сохранена и ожидает отправки','success');}
 var offlineListSignature="";
-function renderOffline(){if(!dom.queueCount)return;var count=queuedEntries().length,conflicts=Object.keys(offline.conflicts);dom.queueCount.textContent=String(count);dom.lastSyncTime.textContent=formatTime(syncConfig.lastSync);dom.offlineStatus.textContent=conflicts.length?'Нужен выбор: конфликтов '+conflicts.length:!syncOnline()?'Нет интернета · изменения сохраняются здесь':count?(syncConfigured()?(syncRuntime.pollIntervalMs===0?'Изменения ждут ручной отправки':'Изменения ожидают отправки'):'Изменения сохранены · подключите синхронизацию'):(syncConfigured()?'Все изменения отправлены':'Сохранено только на этом устройстве');dom.offlineStatus.classList.toggle('has-conflicts',!!conflicts.length);var signature=JSON.stringify([offline.queue,offline.conflicts]);
+function renderOfflineNow(){if(!dom.queueCount)return;var count=queuedEntries().length,conflicts=Object.keys(offline.conflicts);dom.queueCount.textContent=String(count);dom.lastSyncTime.textContent=formatTime(syncConfig.lastSync);dom.offlineStatus.textContent=conflicts.length?'Нужен выбор: конфликтов '+conflicts.length:!syncOnline()?'Нет интернета · изменения сохраняются здесь':count?(syncConfigured()?(syncRuntime.pollIntervalMs===0?'Изменения ждут ручной отправки':'Изменения ожидают отправки'):'Изменения сохранены · подключите синхронизацию'):(syncConfigured()?'Все изменения отправлены':'Сохранено только на этом устройстве');dom.offlineStatus.classList.toggle('has-conflicts',!!conflicts.length);var signature=JSON.stringify([offline.queue,offline.conflicts]);
 if(signature===offlineListSignature)return;offlineListSignature=signature;
 dom.queueList.replaceChildren();queuedEntries().sort(function(a,b){return offline.queue[b].time-offline.queue[a].time;}).slice(0,100).forEach(function(k){dom.queueList.appendChild(el('li',recordLabel(k)+' · '+formatTime(offline.queue[k].time)));});if(count>100)dom.queueList.appendChild(el('li','Показаны последние 100 из '+count+' записей'));dom.conflictList.replaceChildren();conflicts.forEach(function(k){var box=el('article',undefined,'conflict-card');box.appendChild(el('strong',recordLabel(k)));offline.conflicts[k].forEach(function(v,i){var b=el('button',variantText(v)+' · '+formatTime(v.updatedAt)+(v.actor===deviceId?' · это устройство':' · другое устройство'),'secondary');b.type='button';b.addEventListener('click',function(){resolveConflict(k,i);});box.appendChild(b);});dom.conflictList.appendChild(box);});if(conflicts.length)dom.offlineDetails.open=true;}
+// Coalesced variant: markChanged/scheduleSync/updateSyncUI used to rebuild the
+// queue list several times per click; now it runs at most once per frame.
+function renderOffline(){if(renderOfflineScheduled)return;renderOfflineScheduled=true;if(typeof requestAnimationFrame==="function")requestAnimationFrame(function(){renderOfflineScheduled=false;renderOfflineNow();});else renderOfflineNow();}
 function wireOfflineEvents(){if(storage){try{var raw=JSON.parse(storage.getItem(STORAGE_KEY)||'{}');if(raw._offline&&raw._offline.conflicts)offline.conflicts=raw._offline.conflicts;}catch(e){}}trackedPayload=buildPayload();renderOffline();}
 
 ['reportsModal','reportsClose','reportYear','reportQuarter','reportStart','reportEnd','reportClass','reportSubject','reportStudent','reportGroup','reportSummary','reportRows','reportNote','reportExcel','reportPDF'].forEach(function(id){dom[id]=document.getElementById(id);});
@@ -1760,7 +1788,17 @@ function updateSyncUI() {
   // the user had no way to trigger a manual refresh at all.
   [dom.syncNowButton, dom.forcePullButton].forEach(function (button) { if (button) button.disabled = !configured || syncRuntime.isSyncing; });
   if (dom.forcePushButton) dom.forcePushButton.disabled = !configured || readOnly || syncRuntime.isSyncing;
-  renderDeviceList();
+  // Rebuilding the whole device roster on every sync tick used to steal focus
+  // from the device-name input while typing and cost needless DOM work. The
+  // roster only changes when its data changes — so render it only then, and
+  // never while the user is editing inside it.
+  var rosterSignature = JSON.stringify([Object.keys(state.deviceMeta || {}).sort(), state.deviceMeta, configured, deviceId]);
+  if (rosterSignature !== updateSyncUI.lastRoster) {
+    updateSyncUI.lastRoster = rosterSignature;
+    var ae = document.activeElement;
+    var editingInside = ae && dom.syncDeviceList && dom.syncDeviceList.contains(ae);
+    if (!editingInside) renderDeviceList();
+  }
 }
 function scheduleSync() {
   if (syncRuntime.blocked && !Object.keys(offline.conflicts).length && syncConfig.lastError.indexOf("конфликт") !== -1) syncRuntime.blocked = false;
