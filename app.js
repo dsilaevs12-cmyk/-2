@@ -607,7 +607,7 @@ migrateData = function(data,strict) {
         if(!validId(v.classId)||!validId(v.subjectId)||!validDate(v.date)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(v.endTime)||!['planned','held','cancelled'].includes(v.status)||!Array.isArray(v.studentIds)||v.studentIds.length>10000||v.studentIds.some(function(id){return !validId(id);})||new Set(v.studentIds).size!==v.studentIds.length)throw Error('Некорректное занятие');
         Object.assign(x,{classId:v.classId,subjectId:v.subjectId,date:v.date,endTime:v.endTime,status:v.status,studentIds:v.studentIds.slice().sort()});
       } else if(type==='homework'){
-        if(!validId(v.classId)||!validDate(v.date)||typeof v.text!=='string'||!v.text.trim()||v.text.length>4000)throw Error('Некорректное домашнее задание');
+        if(!validId(v.classId)||!validDate(v.dueDate||v.date)||typeof v.text!=='string'||!v.text.trim()||v.text.length>4000)throw Error('Некорректное домашнее задание');
         Object.assign(x,{classId:v.classId,date:v.date,text:v.text});
       } else {if(typeof v.name!=='string'||!v.name.trim()||v.name.length>200)throw Error('Некорректное название');x.name=v.name.trim();}
       return x;
@@ -621,8 +621,8 @@ migrateData = function(data,strict) {
   (hws||[]).forEach(function(v){
     if(!v||!validId(v.id)||hwSeen.has(v.id))throw Error('Некорректная или повторная запись: homework');
     hwSeen.add(v.id);
-    if(!validId(v.classId)||!validDate(v.date)||typeof v.text!=='string'||!v.text.trim()||v.text.length>4000)throw Error('Некорректное домашнее задание');
-    r.homework.push({id:v.id,classId:v.classId,date:v.date,text:v.text,updatedAt:timestamp(v.updatedAt,strict),actor:validId(v.actor)?v.actor:'',deleted:v.deleted===true,clock:cleanClock(v.clock,v.updatedAt)});
+    if(!validId(v.classId)||!validDate(v.dueDate||v.date)||typeof v.text!=='string'||!v.text.trim()||v.text.length>4000)throw Error('Некорректное домашнее задание');
+    r.homework.push({id:v.id,classId:v.classId,dueDate:validDate(v.dueDate)?v.dueDate:(validDate(v.date)?v.date:''),text:v.text,updatedAt:timestamp(v.updatedAt,strict),actor:validId(v.actor)?v.actor:'',deleted:v.deleted===true,clock:cleanClock(v.clock,v.updatedAt)});
   });
   r.lessonMarks={}; var marks=data&&data.lessonMarks||{};
   if(typeof marks!=='object'||Array.isArray(marks)||Object.keys(marks).length>500000)throw Error('Неверный список отметок занятий');
@@ -690,19 +690,19 @@ function wireProjectEvents(){
   wireReportEvents();wireOfflineEvents();
 }
 
-["hwPanel","hwDate","hwClassName","hwText","hwPinButton","hwClearButton","hwAddButton","hwHistory","syncDeviceList","refreshDeviceListButton"].forEach(function(id){dom[id]=document.getElementById(id);});
+["hwPanel","hwDueDate","hwClassName","hwText","hwPinButton","hwClearButton","hwAddButton","hwHistory","syncDeviceList","refreshDeviceListButton"].forEach(function(id){dom[id]=document.getElementById(id);});
 
 /* Homework: unlimited entries pinned per class. Each entry is an item of the
  * synced "homework" list (id/classId/date/text), so a class can hold any number
  * of assignments and they merge across devices like students do. */
-function currentHomework(){var cls=state.selectedClass||'class-main';return (state.homework||[]).filter(function(h){return !h.deleted&&h.classId===cls;}).sort(function(a,b){return b.date.localeCompare(a.date)||b.updatedAt-a.updatedAt;});}
+function currentHomework(){var cls=state.selectedClass||'class-main';return (state.homework||[]).filter(function(h){return !h.deleted&&h.classId===cls;}).sort(function(a,b){return (b.dueDate||'').localeCompare(a.dueDate||'')||b.updatedAt-a.updatedAt;});}
 function addHomeworkEntry(){
   if(syncReadOnly()){showToast('Режим «только чтение»: подключите токен, чтобы добавлять домашние задания','warning');return;}
   var text=(dom.hwText.value||'').trim();if(!text)return showToast('Напишите текст домашнего задания','warning');
   if(text.length>4000)return showToast('Слишком длинное задание (до 4000 символов)','warning');
-  var date=dom.hwDate.value;if(!validDate(date))date=formatDateKey(new Date());
+  var date=dom.hwDueDate.value;if(!validDate(date))date=formatDateKey(new Date());
   var cls=state.selectedClass||'class-main';
-  var entry={id:generateId(),classId:cls,date:date,text:text,updatedAt:nextTimestamp(),actor:deviceId,deleted:false};
+  var entry={id:generateId(),classId:cls,dueDate:date,text:text,updatedAt:nextTimestamp(),actor:deviceId,deleted:false};
   state.homework.push(entry);commitProject(['homework/'+entry.id]);dom.hwText.value='';
   showToast('Домашнее задание добавлено','success');
 }
@@ -725,7 +725,7 @@ function renderHomework(){
   if(!dom.hwPanel)return;
   var cls=state.selectedClass||'class-main';
   dom.hwClassName.textContent=named('classes',cls);
-  if(!dom.hwDate.value)dom.hwDate.value=formatDateKey(new Date());
+  if(!dom.hwDueDate.value)dom.hwDueDate.value=formatDateKey(new Date());
   if(dom.hwPinButton)dom.hwPinButton.disabled=syncReadOnly();
   if(dom.hwAddButton)dom.hwAddButton.disabled=syncReadOnly();
   if(dom.hwClearButton)dom.hwClearButton.disabled=syncReadOnly()||!currentHomework().length;
@@ -734,7 +734,7 @@ function renderHomework(){
   if(!items.length){dom.hwHistory.appendChild(el('p','Для этого класса пока нет домашних заданий.','help-text'));return;}
   items.forEach(function(h){
     var row=el('div',undefined,'lesson-list-item hw-item');
-    var meta=el('span','Дано: '+h.date+' · '+new Date(h.updatedAt).toLocaleDateString('ru-RU'),'hw-meta');
+    var dueTxt=h.dueDate?new Date(h.dueDate+'T00:00:00').toLocaleDateString('ru-RU'):'не указана';var overdue=!!h.dueDate&&h.dueDate<formatDateKey(new Date());var meta=el('span',(overdue?'⚠ Просрочено · ':'')+'Сдать к: '+dueTxt+' · добавлено '+new Date(h.updatedAt).toLocaleDateString('ru-RU'),'hw-meta'+(overdue?' hw-overdue':''));
     var body=el('span',h.text,'hw-text');
     var del=el('button','×','secondary icon-button hw-delete');del.type='button';del.title='Убрать это задание';
     del.addEventListener('click',function(){deleteHomeworkEntry(h.id);});
