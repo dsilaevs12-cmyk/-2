@@ -2487,6 +2487,17 @@ input[type="date"]:focus { outline: none; border-color: var(--primary); box-shad
 @media(max-width:560px){.sync-overview{align-items:stretch;flex-direction:column;padding:15px;gap:10px}.sync-overview button{width:100%}.app-update{align-items:stretch;flex-direction:column}}
 @media screen and (prefers-color-scheme:dark){.sync-overview{background:rgba(23,46,60,.85);border-color:rgba(255,255,255,.15)}.sync-overview strong{color:#93e0c8}.sync-overview p{color:#c2d1da}.sync-notice{background:#20483f;color:#c8f4e6;border-color:#477968}}
 @media(prefers-reduced-motion:reduce){.just-received{animation:none;outline:2px solid #148975}}
+.device-list-head{display:grid;grid-template-columns:1fr 130px 170px;gap:8px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#5c7280;margin-bottom:6px}
+.device-list{display:flex;flex-direction:column;gap:6px}
+.device-row{display:grid;grid-template-columns:1fr 130px 170px;gap:8px;align-items:center;padding:8px 10px;border:1px solid var(--border,#d9e2ec);border-radius:12px;background:var(--surface-2,rgba(255,255,255,.6))}
+.device-name{font-size:13px;font-weight:600;color:#1f3a45;overflow-wrap:anywhere}
+.device-id{font-size:11px;color:#71869a;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.device-badge{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;background:#176c5c;color:#fff;font-size:10px;font-weight:700;vertical-align:middle}
+.device-seen{font-size:12px;color:#506775}
+.device-seen.never{color:#ad4934}
+.device-input{width:100%;padding:6px 8px;font-size:12px}
+@media screen and (prefers-color-scheme:dark){.device-row{background:rgba(15,30,42,.6);border-color:#334155}.device-name{color:#dbe7ef}.device-id,.device-seen{color:#9fb2c0}.device-list-head{color:#8fa6b5}}
+@media(max-width:640px){.device-list-head{display:none}.device-row{grid-template-columns:1fr;gap:6px}}
 @media print{.sync-overview,.sync-notice,.app-update{display:none!important}}
 
 /* 3.3 — optical glass concept. Static highlights keep scrolling inexpensive. */
@@ -2733,6 +2744,7 @@ input[type="date"]:focus { outline: none; border-color: var(--primary); box-shad
     <div class="dev-section"><label for="devVersionTextInput">Текст кнопки версии</label><input id="devVersionTextInput" type="text" placeholder="версия: 3.3" maxlength="60"><div class="row-actions"><button id="devSaveVersionTextButton" type="button">Сохранить</button><button id="devResetVersionTextButton" class="secondary" type="button">По умолчанию</button></div></div>
     <div class="dev-section"><label for="devNewsInput">Объявление для класса</label><textarea id="devNewsInput" placeholder="Напишите важное сообщение…" maxlength="4000"></textarea><div class="row-actions"><button id="devSaveNewsButton" type="button">Сохранить объявление</button><button id="devClearNewsButton" class="secondary" type="button">Очистить</button></div></div>
     <div class="dev-section"><label for="devMaintenanceMessageInput">Экран обслуживания</label><p class="help-text">Информационное сообщение на остальных устройствах. Управление настройками остаётся доступным.</p><textarea id="devMaintenanceMessageInput" maxlength="2000"></textarea><div class="row-actions"><button id="devSaveMaintenanceMessageButton" class="secondary" type="button">Сохранить сообщение</button><button id="devResetMaintenanceMessageButton" class="secondary" type="button">По умолчанию</button><button id="devToggleMaintenanceButton" class="secondary" type="button">Включить экран обслуживания</button></div></div>
+    <div class="dev-section"><label>Устройства синхронизации</label><p class="help-text">Список устройств, которые записывали журнал в этот Gist. Имя можно задать вручную — оно сохранится в облаке для всех подключённых устройств.</p><div class="device-list-head"><span>Устройство</span><span>Активность</span><span>Имя устройства</span></div><div id="syncDeviceList" class="device-list"><p class="help-text">Подключите Gist в разделе «Синхронизация», чтобы увидеть список устройств.</p></div><div class="row-actions"><button id="refreshDeviceListButton" class="secondary" type="button">Обновить список</button></div></div>
     <div class="dev-section"><label>Резервные копии</label><p class="help-text">Копии содержат учеников, отметки и настройки. Перед заменой данных сохраняются три последние версии.</p><div class="row-actions"><button id="importBackupButton" class="secondary" type="button">Загрузить копию</button><button id="restoreBackupButton" class="secondary" type="button">Восстановить последнюю</button><input id="importBackupInput" type="file" accept="application/json,.json" hidden></div></div>
     <div class="modal-actions"><button id="devExitButton" class="danger" type="button">Выйти из настроек</button><button id="devCloseButton" class="secondary" type="button">Свернуть</button></div>
   </div>
@@ -2793,7 +2805,7 @@ var statusSymbols = { present: "✓", absent: "Н", late: "О", unmarked: "·" }
 var settingFields = ["maintenance", "maintenanceMessage", "maintenanceBy", "news", "versionText"];
 var monthNames = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
 var weekdayNames = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
-var state = { students: [], attendance: {}, settings: defaultSettings(), selectedMonth: getMonthString(new Date()), searchQuery: "", revision: 0, lastSyncedRevision: 0, devUnlocked: false };
+var state = { students: [], attendance: {}, settings: defaultSettings(), selectedMonth: getMonthString(new Date()), searchQuery: "", revision: 0, lastSyncedRevision: 0, devUnlocked: false, deviceMeta: {} };
 var syncConfig = { enabled: false, token: "", gistId: "", isPublicGist: false, lastSync: 0, lastSyncStatus: "off", lastError: "" };
 var deviceId = "", logicalTime = 0, activeModal = null, previousFocus = null, modalStack = [];
 var attendanceModalState = { open: false, studentId: "", dateKey: "", currentStatus: STATUS_UNMARKED };
@@ -2869,7 +2881,7 @@ function normalizeStatusEntry(v, strict) {
   return { status: status, updatedAt: timestamp(v.updatedAt, strict), actor: validId(v.actor) ? v.actor : "", clock: cleanClock(v.clock, v.updatedAt) };
 }
 function migrateData(data, strict) {
-  var result = { version: 5, students: [], attendance: {}, settings: defaultSettings() };
+  var result = { version: 5, students: [], attendance: {}, settings: defaultSettings(), deviceMeta: {} };
   if (!data || typeof data !== "object" || Array.isArray(data)) { if (strict) throw new Error("Файл не содержит журнал"); return result; }
   if (strict && (!Array.isArray(data.students) || !data.attendance || typeof data.attendance !== "object" || Array.isArray(data.attendance))) throw new Error("Неверный формат журнала");
   if (strict && data.version && (!Number.isInteger(data.version) || data.version > 5 || data.version < 1)) throw new Error("Эта версия журнала не поддерживается");
@@ -2890,7 +2902,34 @@ function migrateData(data, strict) {
       var value = normalizeStatusEntry(data.attendance[key], strict); if (value) result.attendance[key] = value;
     });
   }
-  result.settings = cloneSettings(data.settings, strict); return result;
+  result.settings = cloneSettings(data.settings, strict); result.deviceMeta = cleanDeviceMeta(data.deviceMeta); return result;
+}
+// Per-device metadata (human-readable name + last activity) that travels with
+// every journal snapshot inside the device's own Gist file. It never affects
+// journal records and is safe to merge from all devices.
+function cleanDeviceMeta(meta) {
+  var result = {};
+  if (!meta || typeof meta !== "object" || Array.isArray(meta)) return result;
+  Object.keys(meta).slice(0, 200).forEach(function (id) {
+    if (!validId(id)) return;
+    var entry = meta[id];
+    if (!entry || typeof entry !== "object") return;
+    var name = typeof entry.name === "string" ? entry.name.trim().slice(0, 40) : "";
+    var seenAt = Number(entry.seenAt);
+    var updatedAt = Number(entry.updatedAt);
+    result[id] = { name: name, seenAt: Number.isFinite(seenAt) && seenAt > 0 ? seenAt : 0, updatedAt: Number.isFinite(updatedAt) && updatedAt > 0 ? updatedAt : 0 };
+  });
+  return result;
+}
+function mergeDeviceMeta(local, remote) {
+  var result = Object.assign({}, local || {}), remoteData = remote || {};
+  Object.keys(remoteData).forEach(function (id) {
+    var incoming = remoteData[id], existing = result[id];
+    if (!existing) { result[id] = incoming; return; }
+    var mergedName = (incoming.updatedAt || 0) >= (existing.updatedAt || 0) ? incoming.name : existing.name;
+    result[id] = { name: mergedName || existing.name || incoming.name, seenAt: Math.max(existing.seenAt || 0, incoming.seenAt || 0), updatedAt: Math.max(existing.updatedAt || 0, incoming.updatedAt || 0) };
+  });
+  return result;
 }
 function newer(a, b) {
   if (!a) return b; if (!b) return a;
@@ -3069,6 +3108,7 @@ function refreshDevPanel() {
   dom.devVersionTextInput.value = state.settings.versionText; dom.devMaintenanceMessageInput.value = state.settings.maintenanceMessage; dom.devNewsInput.value = state.settings.news;
   dom.devToggleMaintenanceButton.textContent = state.settings.maintenance ? "Завершить обслуживание" : "Включить экран обслуживания";
   dom.devToggleMaintenanceButton.className = state.settings.maintenance ? "danger" : "secondary";
+  renderDeviceList();
 }
 function openDevPanel() { if (!state.devUnlocked) { openPasswordModal(); return; } refreshDevPanel(); renderMaintenance(); openModal(dom.devPanelModal, dom.devVersionTextInput); }
 function collapseDevPanel() { closeModal(); renderMaintenance(); }
@@ -3366,11 +3406,11 @@ migrateData = function(data,strict) {
   return r;
 };
 var mergeBase=mergeData;
-mergeData=function(a,b){var r=mergeBase(a,b);projectLists.forEach(function(k){r[k]=mergeStudents(a[k],b[k]);});r.lessonMarks=mergeAttendance(a.lessonMarks,b.lessonMarks);return r;};
+mergeData=function(a,b){var r=mergeBase(a,b);projectLists.forEach(function(k){r[k]=mergeStudents(a[k],b[k]);});r.lessonMarks=mergeAttendance(a.lessonMarks,b.lessonMarks);r.deviceMeta=mergeDeviceMeta(a.deviceMeta,b.deviceMeta);return r;};
 var buildBase=buildPayload;
-buildPayload=function(){var r=buildBase();projectLists.forEach(function(k){r[k]=copy(state[k]||[]);});r.lessonMarks=copy(state.lessonMarks||{});return r;};
+buildPayload=function(){var r=buildBase();projectLists.forEach(function(k){r[k]=copy(state[k]||[]);});r.lessonMarks=copy(state.lessonMarks||{});r.deviceMeta=copy(state.deviceMeta||{});return r;};
 var applyBase=applyMergedToState;
-applyMergedToState=function(data){applyBase(data);projectLists.forEach(function(k){state[k]=copy(data[k]||[]);});state.lessonMarks=copy(data.lessonMarks||{});if(!state.classes.length)state.classes=migrateData({students:[],attendance:{}}).classes;trackedPayload=buildPayload();};
+applyMergedToState=function(data){applyBase(data);projectLists.forEach(function(k){state[k]=copy(data[k]||[]);});state.lessonMarks=copy(data.lessonMarks||{});state.deviceMeta=cleanDeviceMeta(data.deviceMeta);if(!state.classes.length)state.classes=migrateData({students:[],attendance:{}}).classes;trackedPayload=buildPayload();};
 function restoreProjectData(data,current,time){
   projectLists.forEach(function(k){data[k]=data[k]||[];var ids=new Set(data[k].map(function(v){return v.id;}));(current[k]||[]).forEach(function(v){if(!ids.has(v.id))data[k].push(Object.assign({},v,{deleted:true}));});data[k].forEach(function(v){v.updatedAt=time;v.actor=deviceId;});});
   Object.keys(current.lessonMarks||{}).forEach(function(k){if(!data.lessonMarks[k])data.lessonMarks[k]={status:'unmarked'};});Object.values(data.lessonMarks).forEach(function(v){v.updatedAt=time;v.actor=deviceId;});
@@ -3901,6 +3941,14 @@ async function fetchFromGist(config, options) {
 async function pushToGist(data, config) {
   syncCheckGeneration(config);
   if (!config.token) throw new Error("Нет токена GitHub: журнал открыт из публичного Gist только для чтения. Введите токен в подключении, чтобы отправлять изменения.");
+  // Stamp this device's presence card right before uploading so every other
+  // connected device can see it in the settings ("Устройства синхронизации").
+  var meta = state.deviceMeta || (state.deviceMeta = {});
+  var entry = meta[deviceId] || (meta[deviceId] = {});
+  entry.seenAt = Date.now();
+  entry.updatedAt = Date.now();
+  entry.name = typeof entry.name === "string" ? entry.name.slice(0, 40) : "";
+  data = Object.assign({}, data, { deviceMeta: copy(meta) });
   var content = JSON.stringify(data);
   if (new TextEncoder().encode(content).byteLength > 8 * 1024 * 1024) {
     var sizeError = new Error("Журнал превышает 8 МБ — безопасный предел файла Gist. Экспортируйте резервную копию и перенесите архив в отдельное хранилище.");
@@ -3937,6 +3985,7 @@ function updateSyncUI() {
   else if (syncRuntime.hasPendingChanges || state.revision > state.lastSyncedRevision) setSyncStatus("paused", syncRuntime.pollIntervalMs === 0 ? "Есть изменения · отправьте вручную" : "Изменения ждут отправки");
   else setSyncStatus("on", syncConfig.lastSync ? "Синхр. " + formatTime(syncConfig.lastSync) : "Готово к синхронизации");
   [dom.syncNowButton, dom.forcePushButton, dom.forcePullButton].forEach(function (button) { if (button) button.disabled = !configured || readOnly || syncRuntime.isSyncing; });
+  renderDeviceList();
 }
 function scheduleSync() {
   if (syncRuntime.blocked && !Object.keys(offline.conflicts).length && syncConfig.lastError.indexOf("конфликт") !== -1) syncRuntime.blocked = false;
@@ -3962,6 +4011,88 @@ function syncApply(merged) {
     applyMergedToState(merged);
     if (saveLocal() === false) throw syncLocalSaveError();
     render(); announceIncoming(before, merged, "Получено с другого устройства");
+  }
+  // Device roster changes must not schedule a push: the heartbeat is stamped
+  // locally and uploaded with the next real change.
+  state.deviceMeta = cleanDeviceMeta(merged.deviceMeta);
+}
+/* ---------- Connected devices roster (settings panel) ---------- */
+// Every device writes its journal snapshot into its own Gist file together
+// with a small "deviceMeta" card (name + last activity). The merged journal
+// therefore always contains the full list of devices connected to this Gist.
+function deviceSuggestedName(id) {
+  var ua = navigator.userAgent || "";
+  var browser = /Edg\//.test(ua) ? "Edge" : /OPR\//.test(ua) ? "Opera" : /Chrome\//.test(ua) ? "Chrome" : /Firefox\//.test(ua) ? "Firefox" : /Safari\//.test(ua) ? "Safari" : "Браузер";
+  var os = /Windows/.test(ua) ? "Windows" : /Android/.test(ua) ? "Android" : /iPhone|iPad|iPod/.test(ua) ? "iOS" : /Mac OS X/.test(ua) ? "macOS" : /Linux/.test(ua) ? "Linux" : "";
+  return (browser + " " + os).trim() + " · " + String(id).slice(0, 4);
+}
+function formatSeenAgo(seenAt) {
+  if (!(seenAt > 0)) return "никогда";
+  var minutes = Math.max(0, Math.round((Date.now() - seenAt) / 60000));
+  if (minutes < 1) return "только что";
+  if (minutes < 60) return minutes + " мин назад";
+  var hours = Math.round(minutes / 60);
+  if (hours < 24) return hours + " ч назад";
+  var days = Math.round(hours / 24);
+  if (days < 31) return days + " дн назад";
+  return new Date(seenAt).toLocaleDateString("ru-RU");
+}
+function renderDeviceList() {
+  var container = dom.syncDeviceList;
+  if (!container) return;
+  if (!syncConfigured()) {
+    container.innerHTML = '<p class="help-text">Подключите Gist в разделе «Синхронизация», чтобы увидеть список устройств.</p>';
+    return;
+  }
+  var meta = state.deviceMeta || {};
+  var ids = Object.keys(meta);
+  if (deviceId && ids.indexOf(deviceId) === -1) ids.push(deviceId);
+  if (!ids.length) {
+    container.innerHTML = '<p class="help-text">Пока ни одно устройство не отправляло данные в этот Gist. Отправьте изменения — устройство появится в списке.</p>';
+    return;
+  }
+  ids.sort(function (a, b) {
+    if (a === deviceId) return -1;
+    if (b === deviceId) return 1;
+    return ((meta[b] || {}).seenAt || 0) - ((meta[a] || {}).seenAt || 0);
+  });
+  container.textContent = "";
+  ids.forEach(function (id) {
+    var entry = meta[id] || {};
+    var row = document.createElement("div"); row.className = "device-row";
+    var info = document.createElement("div");
+    var name = document.createElement("span"); name.className = "device-name";
+    name.textContent = entry.name || deviceSuggestedName(id);
+    info.appendChild(name);
+    if (id === deviceId) { var badge = document.createElement("span"); badge.className = "device-badge"; badge.textContent = "это устройство"; info.appendChild(badge); }
+    var shortId = document.createElement("span"); shortId.className = "device-id"; shortId.textContent = "ID: " + id.slice(0, 8); info.appendChild(document.createElement("br")); info.appendChild(shortId);
+    row.appendChild(info);
+    var seen = document.createElement("span"); seen.className = "device-seen" + (entry.seenAt ? "" : " never");
+    seen.textContent = id === deviceId ? formatSeenAgo(Math.max(entry.seenAt || 0, syncConfig.lastSync || 0)) : formatSeenAgo(entry.seenAt);
+    row.appendChild(seen);
+    var input = document.createElement("input"); input.className = "device-input"; input.type = "text"; input.maxLength = 40;
+    input.placeholder = "Имя устройства"; input.value = entry.name || ""; input.dataset.deviceId = id;
+    if (id !== deviceId && !syncWritable()) input.disabled = true;
+    input.title = id === deviceId ? "Ваше имя устройства — сохранится в облаке после ближайшей отправки" : "Переименовать это устройство (нужен токен для отправки)";
+    row.appendChild(input);
+    container.appendChild(row);
+  });
+}
+async function refreshDeviceList() {
+  if (!syncConfigured()) { showToast("Сначала подключите Gist в разделе «Синхронизация»", "warning"); return; }
+  if (syncRuntime.isSyncing) { showToast("Синхронизация уже выполняется — подождите", "info"); return; }
+  var button = dom.refreshDeviceListButton;
+  if (button) { button.disabled = true; button.textContent = "Обновление…"; }
+  try {
+    var config = syncOperationConfig();
+    var remote = await fetchFromGist(config, { noCache: true });
+    state.deviceMeta = mergeDeviceMeta(state.deviceMeta || {}, remote.data.deviceMeta || {});
+    saveLocal(); renderDeviceList();
+    showToast("Список устройств обновлён (" + Object.keys(state.deviceMeta).length + ")", "success");
+  } catch (error) {
+    showToast("Не удалось получить список устройств: " + (error.message || "ошибка сети"), "error");
+  } finally {
+    if (button) { button.disabled = false; button.textContent = "Обновить список"; }
   }
 }
 function syncLocalSaveError() {
