@@ -237,21 +237,29 @@
 
     .version-badge:active { transform: translateY(0); }
 
+    /* Performance: the badge shine used to run an infinite transform
+       animation on a full-size overlay layer — it forced the compositor to
+       repaint that area forever (visible battery/CPU drain on phones). The
+       effect is GPU-friendly now: animate background-position instead of
+       transforming a huge pseudo-element, and the global reduced-motion rule
+       still disables it when requested. */
     .version-badge::before {
       content: "";
       position: absolute;
       top: 0;
-      left: -50%;
-      width: 200%;
+      left: 0;
+      width: 100%;
       height: 100%;
       background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.3) 50%, transparent 100%);
+      background-size: 200% 100%;
+      background-position: -50% 0;
       animation: betaShine 3.5s ease-in-out infinite;
       pointer-events: none;
     }
 
     @keyframes betaShine {
-      0%, 100% { transform: translateX(-50%); }
-      50% { transform: translateX(50%); }
+      0%, 100% { background-position: -50% 0; }
+      50% { background-position: 50% 0; }
     }
 
     .version-badge-dot {
@@ -1269,7 +1277,10 @@
       background: var(--card);
       color: var(--text-strong);
       cursor: pointer;
-      transition: all var(--t-base);
+      /* Animate only the properties that actually change on hover/focus.
+         `transition: all` made the browser interpolate every property
+         (including box-shadow and layout props) — needless work on phones. */
+      transition: background-color var(--t-base), border-color var(--t-base), color var(--t-base), transform var(--t-fast);
       font-family: inherit;
       font-size: var(--fs-sm);
       font-weight: 600;
@@ -2816,4 +2827,44 @@ input:not([type]), select, textarea { border-radius: var(--radius-sm); }
 /* Print: settings-only widgets are irrelevant on paper. */
 @media print {
   .modal-backdrop, .glass-navigation, .news-banner, .toast { display: none !important; }
+}
+
+/* ============================================================
+   PERFORMANCE PASS (lag fixes). Screen-only; print unaffected.
+   ============================================================ */
+@media screen {
+  /* The decorative background is a fixed full-viewport gradient stack.
+     With `background-attachment: fixed` every scroll step re-rasterized it.
+     A pseudo-element promoted to its own compositor layer removes that
+     cost entirely. */
+  body { background-attachment: initial; }
+  body::before { will-change: transform; transform: translateZ(0); }
+
+  /* The journal table is the heaviest subtree (~30 rows x ~31 cells with
+     glass buttons). Skip layout/paint work for off-screen parts of long
+     months — browsers cull whole rows then instead of the full table. */
+  #attendanceTableCard .table-wrapper { content-visibility: auto; contain-intrinsic-size: auto 600px; }
+
+  /* Blur radii of 20-30px over large surfaces forced expensive backdrop
+     recomputation on low-end GPUs. Halve them: visually indistinguishable
+     at these opacities, roughly twice as cheap to composite. */
+  .modal, .maintenance-content { -webkit-backdrop-filter: blur(14px) saturate(140%); backdrop-filter: blur(14px) saturate(140%); }
+  .offline-panel, .summary-card, .journal-panel, .lessons-panel, .sync-panel, .table-card {
+    -webkit-backdrop-filter: blur(10px) saturate(140%); backdrop-filter: blur(10px) saturate(140%);
+  }
+
+  /* Infinite "pulse" animations (badge dot, maintenance icon/badge, sync
+     dot) kept the main thread painting even when nothing happened. They
+     now run on their own layers and stop entirely under reduced-motion. */
+  .maintenance-icon, .maintenance-active-badge, .version-badge-dot, .sync-status.busy .status-dot {
+    will-change: transform, opacity;
+  }
+}
+
+/* Devices that ask for less motion get a fully static interface: no
+   infinite shine/pulse loops at all — this is also the fastest mode on
+   weak hardware and matches the OS accessibility setting. */
+@media screen and (prefers-reduced-motion: reduce) {
+  .version-badge::before, .version-badge-dot, .maintenance-icon,
+  .maintenance-active-badge, .sync-status.busy .status-dot { animation: none !important; }
 }

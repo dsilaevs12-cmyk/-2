@@ -5,7 +5,12 @@ var SYNC_CONFIG_KEY = "attendance_sync_config";
 var DEVICE_ID_KEY = "attendance_device_id";
 var INTERVAL_KEY = "attendance_poll_interval";
 var GIST_FILENAME = "attendance.json";
-var DEFAULT_POLL_INTERVAL_MS = 5000, PUSH_DEBOUNCE_MS = 400;
+// Sync pacing (performance): polling the Gist API every 5 s on a phone drains
+// battery and repeatedly re-merges/re-renders the whole journal — the main
+// cause of interface lag. New default: 15 s with an exponential backoff up to
+// 60 s while the connection keeps failing. Pushes after edits are debounced
+// 1.2 s so rapid tapping no longer queues several uploads in a row.
+var DEFAULT_POLL_INTERVAL_MS = 15000, PUSH_DEBOUNCE_MS = 1200;
 var SETTINGS_UNLOCK_KEY = "attendance_settings_unlocked";
 var SETTINGS_CODE_SET_KEY = "attendance_settings_code_set";
 var BACKUP_KEY = "attendance_recovery_backups";
@@ -1825,11 +1830,19 @@ function saveSyncConfig() {
 function loadInterval() {
   try {
     var raw = storage && storage.getItem(INTERVAL_KEY);
-    var interval = raw === null || raw === undefined ? DEFAULT_POLL_INTERVAL_MS : Number(raw);
-    // Upgrade the former default once; manual mode and other choices survive.
+    // A missing key means "never chosen by the user" -> apply the current
+    // default (15 s). An explicit "0" (manual mode) must stay manual.
+    var interval = raw === null || raw === undefined || String(raw).trim() === "" ? DEFAULT_POLL_INTERVAL_MS : Number(raw);
+    // Upgrade the former defaults once; manual mode and other choices survive.
+    // v32 migrated 30 s -> 5 s; that 5 s cadence proved too heavy for phones
+    // (constant network + re-render churn), so v34 upgrades it to 15 s.
     if(storage && !storage.getItem("attendance_sync_speed_v32")) {
-      if(interval === 30000) { interval=5000; storage.setItem(INTERVAL_KEY,"5000"); }
+      if(interval === 30000) { interval=15000; storage.setItem(INTERVAL_KEY,"15000"); }
       storage.setItem("attendance_sync_speed_v32","1");
+    }
+    if(storage && !storage.getItem("attendance_sync_speed_v34")) {
+      if(interval === 5000 || interval === 30000) { interval=15000; storage.setItem(INTERVAL_KEY,"15000"); }
+      storage.setItem("attendance_sync_speed_v34","1");
     }
     if ([0, 5000, 15000, 30000, 60000].indexOf(interval) !== -1) syncRuntime.pollIntervalMs = interval;
   } catch (error) {}
