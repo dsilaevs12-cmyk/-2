@@ -606,9 +606,6 @@ migrateData = function(data,strict) {
       if(type==='lessons'){
         if(!validId(v.classId)||!validId(v.subjectId)||!validDate(v.date)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(v.endTime)||!['planned','held','cancelled'].includes(v.status)||!Array.isArray(v.studentIds)||v.studentIds.length>10000||v.studentIds.some(function(id){return !validId(id);})||new Set(v.studentIds).size!==v.studentIds.length)throw Error('Некорректное занятие');
         Object.assign(x,{classId:v.classId,subjectId:v.subjectId,date:v.date,endTime:v.endTime,status:v.status,studentIds:v.studentIds.slice().sort()});
-      } else if(type==='homework'){
-        if(!validId(v.classId)||!validDate(v.dueDate||v.date)||typeof v.text!=='string'||!v.text.trim()||v.text.length>4000)throw Error('Некорректное домашнее задание');
-        Object.assign(x,{classId:v.classId,date:v.date,text:v.text});
       } else {if(typeof v.name!=='string'||!v.name.trim()||v.name.length>200)throw Error('Некорректное название');x.name=v.name.trim();}
       return x;
     });
@@ -691,6 +688,10 @@ function wireProjectEvents(){
   if(dom.lessonDelete)dom.lessonDelete.addEventListener('click',function(){var l=state.lessons.find(function(x){return x.id===activeLessonId;});if(l&&confirm('Удалить это занятие?')){try{saveRecoveryBackup();}catch(e){return showToast(e.message,'error');}l.deleted=true;l.updatedAt=nextTimestamp();l.actor=deviceId;closeModal();commitProject(["lessons/"+l.id]);}});
   if(dom.studentClassMove&&dom.studentClassPicker)dom.studentClassMove.addEventListener('click',function(){var s=getStudentById(studentCardState.studentId);if(s&&s.classId!==dom.studentClassPicker.value){s.classId=dom.studentClassPicker.value;s.updatedAt=nextTimestamp();s.actor=deviceId;commitProject(['students/'+s.id]);showToast('Класс изменён. История занятий сохранена.','success');}});
   if(dom.hwAddButton)dom.hwAddButton.addEventListener('click',addHomeworkEntry);
+  // Enter adds the entry like a form submit; Shift+Enter inserts a line break.
+  if(dom.hwText)dom.hwText.addEventListener('keydown',function(event){
+    if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();addHomeworkEntry();}
+  });
   if(dom.hwPinButton)dom.hwPinButton.addEventListener('click',addHomeworkEntry); // same action, kept for compatibility
   if(dom.hwClearButton)dom.hwClearButton.addEventListener('click',clearClassHomework);
   if(dom.refreshDeviceListButton)dom.refreshDeviceListButton.addEventListener('click',function(){refreshDeviceList();});
@@ -713,10 +714,13 @@ function wireProjectEvents(){
 function currentHomework(){var cls=state.selectedClass||'class-main';return (state.homework||[]).filter(function(h){return !h.deleted&&h.classId===cls;}).sort(function(a,b){return (b.dueDate||'').localeCompare(a.dueDate||'')||b.updatedAt-a.updatedAt;});}
 function addHomeworkEntry(){
   if(syncReadOnly()){showToast('Режим «только чтение»: подключите токен, чтобы добавлять домашние задания','warning');return;}
+  // Guard every node used here: a missing control must never abort the action.
+  if(!dom.hwText||!dom.hwText.isConnected)return showToast('Панель домашних заданий недоступна','error');
   var text=(dom.hwText.value||'').trim();if(!text)return showToast('Напишите текст домашнего задания','warning');
   if(text.length>4000)return showToast('Слишком длинное задание (до 4000 символов)','warning');
-  var date=dom.hwDueDate.value;if(!validDate(date))date=formatDateKey(new Date());
+  var date=dom.hwDueDate&&dom.hwDueDate.value?dom.hwDueDate.value:'';if(!validDate(date))date=formatDateKey(new Date());
   var cls=state.selectedClass||'class-main';
+  if(!Array.isArray(state.homework))state.homework=[];
   var entry={id:generateId(),classId:cls,dueDate:date,text:text,updatedAt:nextTimestamp(),actor:deviceId,deleted:false};
   state.homework.push(entry);commitProject(['homework/'+entry.id]);dom.hwText.value='';
   showToast('Домашнее задание добавлено','success');
@@ -737,13 +741,14 @@ function clearClassHomework(){
   commitProject(keys);showToast('Задания убраны','success');
 }
 function renderHomework(){
-  if(!dom.hwPanel)return;
+  if(!dom.hwPanel||!dom.hwPanel.isConnected)return;
   var cls=state.selectedClass||'class-main';
-  dom.hwClassName.textContent=named('classes',cls);
-  if(!dom.hwDueDate.value)dom.hwDueDate.value=formatDateKey(new Date());
+  if(dom.hwClassName)dom.hwClassName.textContent=named('classes',cls);
+  if(dom.hwDueDate&&!dom.hwDueDate.value)dom.hwDueDate.value=formatDateKey(new Date());
   if(dom.hwPinButton)dom.hwPinButton.disabled=syncReadOnly();
   if(dom.hwAddButton)dom.hwAddButton.disabled=syncReadOnly();
   if(dom.hwClearButton)dom.hwClearButton.disabled=syncReadOnly()||!currentHomework().length;
+  if(!dom.hwHistory||!dom.hwHistory.isConnected)return;
   dom.hwHistory.replaceChildren();
   var items=currentHomework();
   if(!items.length){dom.hwHistory.appendChild(el('p','Для этого класса пока нет домашних заданий.','help-text'));return;}
