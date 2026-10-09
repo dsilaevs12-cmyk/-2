@@ -312,7 +312,7 @@ function renderNews() {
 function render() {
   var focused = document.activeElement, days = getDisplayedDays();
   renderViewControls(days); dom.printMonthTitle.textContent = dom.monthTitle.textContent;
-  renderHeader(days); renderBody(days); renderSummary(days); renderStudentCard();
+  renderHeader(days); renderBody(days); renderSummary(days); renderStudentCard(); renderProject();
   dom.searchResultsInfo.textContent = state.searchQuery.trim() ? "Найдено " + getFilteredStudents().length + " из " + getVisibleStudents().length : "Всего " + getVisibleStudents().length;
   dom.clearSearchButton.hidden = !state.searchQuery; dom.versionButtonText.textContent = state.settings.versionText; dom.versionButton.setAttribute("aria-label", state.settings.versionText + ". Открыть настройки по коду"); if (dom.journalEdition) dom.journalEdition.textContent = settingsVersionText(); renderNews(); renderMaintenance(); renderHomework(); renderOffline();
   if (!activeModal && focused && focused.dataset && focused.dataset.dateKey && !focused.isConnected) { var replacement = document.querySelector('.attendance-button[data-student-id="' + focused.dataset.studentId + '"][data-date-key="' + focused.dataset.dateKey + '"]'); if (replacement) replacement.focus(); }
@@ -643,7 +643,7 @@ function named(type,id){var v=(state[type]||[]).find(function(x){return x.id===i
 function el(tag,text,cls){var n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;}
 function fillSelect(node,items,all){var value=node.value;node.replaceChildren();if(all)node.appendChild(new Option(all,''));items.filter(function(x){return !x.deleted;}).forEach(function(x){node.appendChild(new Option(x.name,x.id));});if(Array.from(node.options).some(function(o){return o.value===value;}))node.value=value;}
 function commitProject(keys){markChanged(keys);saveLocal();render();scheduleSync();}
-function createNamed(type){var name=window.prompt(type==='classes'?'Название класса':'Название предмета');if(name===null)return;name=name.trim();if(!name||name.length>200)return showToast('Введите название до 200 символов','warning');var existing=state[type].find(function(x){return !x.deleted&&x.name.toLowerCase()===name.toLowerCase();});if(existing)return showToast('Такое название уже есть','warning');var item={id:generateId(),name:name,updatedAt:nextTimestamp(),actor:deviceId,deleted:false};state[type].push(item);if(type==='classes')state.selectedClass=item.id;commitProject([type+'/'+item.id]);if(type==='subjects')dom.lessonSubject.value=item.id;}
+function createNamed(type){var name=window.prompt(type==='classes'?'Название класса':'Название предмета');if(name===null)return;name=name.trim();if(!name||name.length>200)return showToast('Введите название до 200 символов','warning');var existing=state[type].find(function(x){return !x.deleted&&x.name.toLowerCase()===name.toLowerCase();});if(existing)return showToast('Такое название уже есть','warning');var item={id:generateId(),name:name,updatedAt:nextTimestamp(),actor:deviceId,deleted:false};state[type].push(item);if(type==='classes')state.selectedClass=item.id;commitProject([type+'/'+item.id]);if(type==='subjects'&&dom.lessonSubject)dom.lessonSubject.value=item.id;}
 function createLesson(){
   var date=dom.lessonDate.value,subject=dom.lessonSubject.value,end=dom.lessonEnd.value,status=dom.lessonStatus.value;
   if(!validDate(date)||!subject||!/^([01]\d|2[0-3]):[0-5]\d$/.test(end))return showToast('Укажите дату, предмет и время окончания','warning');
@@ -659,22 +659,37 @@ function renderLesson(){
   if(focusedStudent){var replacement=dom.lessonRoster.querySelector('[data-lesson-student="'+focusedStudent+'"]');if(replacement)replacement.focus({preventScroll:true});}
 }
 function renderProject(){
-  if(!dom.classPicker)return;
-  fillSelect(dom.classPicker,state.classes);dom.classPicker.value=state.selectedClass;fillSelect(dom.lessonSubject,state.subjects);fillSelect(dom.studentClassPicker,state.classes);
-  var card=getStudentById(typeof studentCardState!=='undefined'?studentCardState.studentId:'');if(card)dom.studentClassPicker.value=card.classId||'class-main';
-  dom.lessonCreate.disabled=!state.subjects.some(function(s){return !s.deleted;});
-  dom.lessonList.replaceChildren();var lessons=state.lessons.filter(function(l){return !l.deleted&&l.classId===state.selectedClass&&l.date===dom.lessonDate.value;}).sort(function(a,b){return a.endTime.localeCompare(b.endTime);});
-  if(!lessons.length)dom.lessonList.appendChild(el('p','На выбранную дату занятий нет.','help-text'));
-  lessons.forEach(function(l){var b=el('button',named('subjects',l.subjectId)+' · до '+l.endTime+' · '+({planned:'Запланировано',held:'Проведено',cancelled:'Отменено'}[l.status]),'secondary lesson-list-item');b.type='button';b.addEventListener('click',function(){openLesson(l.id);});dom.lessonList.appendChild(b);});
+  if(dom.classPicker){
+    fillSelect(dom.classPicker,state.classes);dom.classPicker.value=state.selectedClass;
+  }
+  if(dom.lessonSubject)fillSelect(dom.lessonSubject,state.subjects);
+  if(dom.studentClassPicker){
+    fillSelect(dom.studentClassPicker,state.classes);
+    var card=getStudentById(typeof studentCardState!=='undefined'?studentCardState.studentId:'');if(card)dom.studentClassPicker.value=card.classId||'class-main';
+  }
+  if(dom.lessonCreate)dom.lessonCreate.disabled=!state.subjects.some(function(s){return !s.deleted;});
+  if(dom.lessonList&&dom.lessonDate){
+    dom.lessonList.replaceChildren();var lessons=state.lessons.filter(function(l){return !l.deleted&&l.classId===state.selectedClass&&l.date===dom.lessonDate.value;}).sort(function(a,b){return a.endTime.localeCompare(b.endTime);});
+    if(!lessons.length)dom.lessonList.appendChild(el('p','На выбранную дату занятий нет.','help-text'));
+    lessons.forEach(function(l){var b=el('button',named('subjects',l.subjectId)+' · до '+l.endTime+' · '+({planned:'Запланировано',held:'Проведено',cancelled:'Отменено'}[l.status]),'secondary lesson-list-item');b.type='button';b.addEventListener('click',function(){openLesson(l.id);});dom.lessonList.appendChild(b);});
+  }
   if(activeModal===dom.reportsModal)renderReports();
   if(activeModal===dom.lessonModal)renderLesson();
 }
 function wireProjectEvents(){
-  dom.lessonDate.value=formatDateKey(new Date());dom.lessonEnd.value='14:00';
-  dom.classPicker.addEventListener('change',function(){state.selectedClass=dom.classPicker.value;render();});dom.addClassButton.addEventListener('click',function(){createNamed('classes');});dom.addSubjectButton.addEventListener('click',function(){createNamed('subjects');});dom.lessonDate.addEventListener('change',renderProject);dom.lessonCreate.addEventListener('click',createLesson);dom.lessonClose.addEventListener('click',closeModal);
-  dom.lessonState.addEventListener('change',function(){var l=state.lessons.find(function(x){return x.id===activeLessonId;});if(l){l.status=dom.lessonState.value;l.updatedAt=nextTimestamp();l.actor=deviceId;commitProject(["lessons/"+l.id]);}});
-  dom.lessonDelete.addEventListener('click',function(){var l=state.lessons.find(function(x){return x.id===activeLessonId;});if(l&&confirm('Удалить это занятие?')){try{saveRecoveryBackup();}catch(e){return showToast(e.message,'error');}l.deleted=true;l.updatedAt=nextTimestamp();l.actor=deviceId;closeModal();commitProject(["lessons/"+l.id]);}});
-  dom.studentClassMove.addEventListener('click',function(){var s=getStudentById(studentCardState.studentId);if(s&&s.classId!==dom.studentClassPicker.value){s.classId=dom.studentClassPicker.value;s.updatedAt=nextTimestamp();s.actor=deviceId;commitProject(['students/'+s.id]);showToast('Класс изменён. История занятий сохранена.','success');}});
+  // The lesson-creation UI (lessonDate/lessonEnd/lessonsPanel) was removed from
+  // the markup, so every project control must be guarded against missing nodes.
+  if(dom.lessonDate)dom.lessonDate.value=formatDateKey(new Date());
+  if(dom.lessonEnd)dom.lessonEnd.value='14:00';
+  if(dom.classPicker)dom.classPicker.addEventListener('change',function(){state.selectedClass=dom.classPicker.value;render();});
+  if(dom.addClassButton)dom.addClassButton.addEventListener('click',function(){createNamed('classes');});
+  if(dom.addSubjectButton)dom.addSubjectButton.addEventListener('click',function(){createNamed('subjects');});
+  if(dom.lessonDate)dom.lessonDate.addEventListener('change',renderProject);
+  if(dom.lessonCreate)dom.lessonCreate.addEventListener('click',createLesson);
+  if(dom.lessonClose)dom.lessonClose.addEventListener('click',closeModal);
+  if(dom.lessonState)dom.lessonState.addEventListener('change',function(){var l=state.lessons.find(function(x){return x.id===activeLessonId;});if(l){l.status=dom.lessonState.value;l.updatedAt=nextTimestamp();l.actor=deviceId;commitProject(["lessons/"+l.id]);}});
+  if(dom.lessonDelete)dom.lessonDelete.addEventListener('click',function(){var l=state.lessons.find(function(x){return x.id===activeLessonId;});if(l&&confirm('Удалить это занятие?')){try{saveRecoveryBackup();}catch(e){return showToast(e.message,'error');}l.deleted=true;l.updatedAt=nextTimestamp();l.actor=deviceId;closeModal();commitProject(["lessons/"+l.id]);}});
+  if(dom.studentClassMove&&dom.studentClassPicker)dom.studentClassMove.addEventListener('click',function(){var s=getStudentById(studentCardState.studentId);if(s&&s.classId!==dom.studentClassPicker.value){s.classId=dom.studentClassPicker.value;s.updatedAt=nextTimestamp();s.actor=deviceId;commitProject(['students/'+s.id]);showToast('Класс изменён. История занятий сохранена.','success');}});
   if(dom.hwAddButton)dom.hwAddButton.addEventListener('click',addHomeworkEntry);
   if(dom.hwPinButton)dom.hwPinButton.addEventListener('click',addHomeworkEntry); // same action, kept for compatibility
   if(dom.hwClearButton)dom.hwClearButton.addEventListener('click',clearClassHomework);
