@@ -1312,8 +1312,14 @@ function updateSyncUI() {
   if (dom.gistPublicCheckbox) dom.gistPublicCheckbox.checked = Boolean(syncConfig.isPublicGist);
   if (dom.publicGistWarning) dom.publicGistWarning.hidden = !syncConfig.isPublicGist;
   if (!configured) setSyncStatus("off", syncConfig.enabled && syncConfig.gistId ? "Нет доступа к Gist — проверьте ID или добавьте токен" : "На этом устройстве");
-  else if (readOnly) setSyncStatus("paused", "Публичный Gist · только чтение");
-  else if (!syncOnline()) setSyncStatus("paused", "Нет сети · сохранено локально");
+  else if (readOnly) {
+    // Read-only mode never uploads, so it is NOT "saved locally only": the
+    // journal here mirrors the public Gist. The old order of checks showed
+    // "Нет сети · сохранено локально" whenever navigator.onLine lied (VPN,
+    // strict networks), which made users think sync was broken.
+    setSyncStatus(syncOnline() ? "on" : "paused", syncConfig.lastSync ? "Публичный Gist · синхр. " + formatTime(syncConfig.lastSync) : "Публичный Gist · только чтение");
+  }
+  else if (!syncOnline()) setSyncStatus("paused", "Нет сети · изменения сохранятся на устройстве");
   else if (syncRuntime.isSyncing) setSyncStatus("busy", "Синхронизация…");
   else if (syncConfig.lastSyncStatus === "error") setSyncStatus("error", syncRuntime.retryTimer ? "Ошибка · повтор запланирован" : "Ошибка синхронизации");
   else if (syncRuntime.hasPendingChanges || state.revision > state.lastSyncedRevision) setSyncStatus("paused", syncRuntime.pollIntervalMs === 0 ? "Есть изменения · отправьте вручную" : "Изменения ждут отправки");
@@ -1493,6 +1499,13 @@ async function syncRun(reason, polling) {
   if (reason !== "manual" && syncRuntime.blocked) return;
   if (reason === "manual") { syncRuntime.blocked = false; clearTimeout(syncRuntime.retryTimer); syncRuntime.retryTimer = null; syncRuntime.retryAt = 0; }
   if (!syncOnline()) { updateSyncUI(); return; }
+  // Read-only connections never upload, so a failed fetch must not leave the
+  // UI stuck in "error" state: local data is intact and the next poll retries
+  // anyway. Clear the stale error flag before starting a fresh cycle.
+  if (syncReadOnly() && syncConfig.lastSyncStatus === "error") {
+    var hardFailure = Boolean(syncRuntime.blocked) || /токен|конфликт|401|403|404|422/i.test(String(syncConfig.lastError || ""));
+    if (!hardFailure) { syncConfig.lastSyncStatus = "off"; syncConfig.lastError = ""; }
+  }
   if (polling && document.hidden) return;
   clearTimeout(syncRuntime.pushTimer); syncRuntime.pushTimer = null;
   var config = syncOperationConfig();
@@ -1506,8 +1519,14 @@ async function syncRun(reason, polling) {
       // Another tab may have changed localStorage while this tab waited for its
       // lock or for the network. Merge it before constructing a sent snapshot.
       if (!loadLocal()) throw syncLocalSaveError();
-      var hasWork = syncRuntime.hasPendingChanges || state.revision > state.lastSyncedRevision || queuedEntries().length > 0 || Object.keys(offline.conflicts).length > 0;
-      if (remote.notModified && syncRuntime.remoteApplied && !hasWork) {
+      // Read-only connections never upload: a remote that is byte-for-byte equal
+  // to the local snapshot means "fully in sync" even on the very first fetch
+  // (no cached copy yet). Without this, fresh devices connected to a public
+  // Gist kept showing "Нет сети · сохранено локально" forever because the
+  // notModified fast-path required remoteApplied, which was never set.
+  var remoteMatchesLocal = remote.notModified ? Boolean(syncRuntime.remoteApplied) : syncEqual(buildPayload(), remote.data);
+  var hasWork = syncRuntime.hasPendingChanges || state.revision > state.lastSyncedRevision || queuedEntries().length > 0 || Object.keys(offline.conflicts).length > 0;
+      if (remote.notModified && remoteMatchesLocal && !hasWork) {
         syncRuntime.lastPullAt = Date.now(); syncSuccess(reason, state.revision, true); return;
       }
       if(remote.notModified && Object.keys(offline.conflicts).length && syncRuntime.lastConflictRevision === state.revision){
@@ -1521,6 +1540,14 @@ async function syncRun(reason, polling) {
       var payload = buildPayload(), sentQueue = queueSnapshot();
       // Read-only mode (public Gist without a token): apply remote data but never upload.
       var requiresPush = Boolean(config.token) && !syncEqual(payload, remote.data);
+      // When nothing is uploaded the local snapshot now mirrors the Gist
+      // exactly, so mark it synced and remember the remote was applied even
+      // if the very next fetch answers 304 (fixes the stuck "сохранено
+      // локально" status on read-only connections).
+      if (!requiresPush && syncEqual(payload, remote.data)) {
+        state.lastSyncedRevision = Math.max(state.lastSyncedRevision || 0, state.revision);
+        syncRuntime.remoteApplied = true;
+      }
       if (requiresPush) {
         // Mark the merged local-only records pending before a potentially failing
         // PATCH so even the first failure receives a retry.
