@@ -1,0 +1,115 @@
+From 997e90e2450315205e994be2386233af811f23c9 Mon Sep 17 00:00:00 2001
+From: "qwen.ai[bot]" <qwenlm-intl@service.alibaba.com>
+Date: Fri, 9 Oct 2026 21:10:14 +0000
+Subject: [PATCH] Performance: second calibration pass for laggy devices
+
+- Save-to-localStorage debounce 150ms -> 600ms: full JSON serialization no longer runs many times per second while tapping cells; data still flushed on tab hide/close.
+- Sync poll default and migration now 30s (old saved 5s/15s values auto-upgraded once); push debounce 1.2s -> 2.5s so bursts of edits upload once.
+- CSS: glass dock and modal backdrop blurs limited to their own small area instead of the whole page; attendance-button hover no longer re-rasterizes box-shadow.
+- index.html: interval selector defaults to 30s (recommended).
+---
+ app.js     | 27 ++++++++++++++++++++++-----
+ index.html |  2 +-
+ styles.css | 13 +++++++++++++
+ 3 files changed, 36 insertions(+), 6 deletions(-)
+
+diff --git a/app.js b/app.js
+index 9baa4e7..a026559 100644
+--- a/app.js
++++ b/app.js
+@@ -7,10 +7,15 @@ var INTERVAL_KEY = "attendance_poll_interval";
+ var GIST_FILENAME = "attendance.json";
+ // Sync pacing (performance): polling the Gist API every 5 s on a phone drains
+ // battery and repeatedly re-merges/re-renders the whole journal — the main
+-// cause of interface lag. New default: 15 s with an exponential backoff up to
++// cause of interface lag. New default: 30 s with an exponential backoff up to
+ // 60 s while the connection keeps failing. Pushes after edits are debounced
+-// 1.2 s so rapid tapping no longer queues several uploads in a row.
+-var DEFAULT_POLL_INTERVAL_MS = 15000, PUSH_DEBOUNCE_MS = 1200;
++// 2.5 s so rapid tapping no longer queues several uploads in a row.
++var DEFAULT_POLL_INTERVAL_MS = 30000, PUSH_DEBOUNCE_MS = 2500;
++// One-time migration of previously saved intervals: devices that still carry
++// the old aggressive "5 s" or "15 s" setting would keep hammering GitHub and
++// re-merging/re-rendering every few seconds — the main background lag source.
++// Manual mode (0) and the gentle "60 s" choice are left untouched.
++function migratePollInterval(ms) { return ms === 5000 || ms === 15000 ? DEFAULT_POLL_INTERVAL_MS : ms; }
+ var SETTINGS_UNLOCK_KEY = "attendance_settings_unlocked";
+ var SETTINGS_CODE_SET_KEY = "attendance_settings_code_set";
+ var BACKUP_KEY = "attendance_recovery_backups";
+@@ -298,7 +303,12 @@ function markChanged() { state.revision++; syncRuntime.hasPendingChanges = true;
+ var saveLocalTimer = null;
+ function scheduleSaveLocal() {
+   if (saveLocalTimer) return;
+-  saveLocalTimer = setTimeout(function () { saveLocalTimer = null; saveLocal(); }, 150);
++  // 600 ms instead of 150: saving serializes the WHOLE journal (JSON.stringify)
++  // and re-reads it from localStorage on every call. Tapping cells in quick
++  // succession used to fire this cycle many times per second — the main cause
++  // of input lag on phones. Data is still flushed synchronously when the tab
++  // is hidden or closed, so nothing is lost.
++  saveLocalTimer = setTimeout(function () { saveLocalTimer = null; saveLocal(); }, 600);
+ }
+ function flushSaveLocal() { if (saveLocalTimer) { clearTimeout(saveLocalTimer); saveLocalTimer = null; saveLocal(); } }
+ if (typeof document !== "undefined") {
+@@ -1844,6 +1854,13 @@ function loadInterval() {
+       if(interval === 5000 || interval === 30000) { interval=15000; storage.setItem(INTERVAL_KEY,"15000"); }
+       storage.setItem("attendance_sync_speed_v34","1");
+     }
++    // v35: 5 s and 15 s cadences proved too heavy for phones (constant merge +
++    // re-render churn between taps). Upgrade them once to the calm 30 s pace.
++    if(storage && !storage.getItem("attendance_sync_speed_v35")) {
++      var migrated = migratePollInterval(interval);
++      if (migrated !== interval) { interval = migrated; storage.setItem(INTERVAL_KEY, String(interval)); }
++      storage.setItem("attendance_sync_speed_v35","1");
++    }
+     if ([0, 5000, 15000, 30000, 60000].indexOf(interval) !== -1) syncRuntime.pollIntervalMs = interval;
+   } catch (error) {}
+ }
+@@ -2200,7 +2217,7 @@ function scheduleSync() {
+   syncRuntime.pushTimer = setTimeout(function () {
+     syncRuntime.pushTimer = null;
+     if (generation === syncRuntime.generation && syncAutomatic()) fullSync("auto");
+-  }, typeof PUSH_DEBOUNCE_MS === "number" ? PUSH_DEBOUNCE_MS : 1500);
++  }, typeof PUSH_DEBOUNCE_MS === "number" ? PUSH_DEBOUNCE_MS : 2500);
+ }
+ function syncWithDeviceLock(config, callback) {
+   if (navigator.locks && typeof navigator.locks.request === "function") {
+diff --git a/index.html b/index.html
+index 5080d0a..ea0313c 100644
+--- a/index.html
++++ b/index.html
+@@ -79,7 +79,7 @@
+     <div class="sync-content">
+       <p class="help-text">На всех устройствах укажите один и тот же ID GitHub Gist: непубличного (Secret) или публичного (Public). На новом устройстве нажмите «Сохранить подключение» — существующий журнал загрузится автоматически. Токен и ID сохраняются в этом браузере и не сбрасываются после закрытия вкладки. Secret Gist доступен всем, у кого есть его ссылка.</p>
+       <div class="sync-actions"><button id="toggleSyncConfigButton" class="secondary" type="button">Подключение</button><button id="syncNowButton" type="button" disabled>Синхронизировать</button><button id="forcePushButton" class="secondary" type="button" disabled>Отправить изменения</button><button id="forcePullButton" class="secondary" type="button" disabled>Взять с сервера</button><button id="debugButton" class="secondary" type="button">Диагностика</button></div>
+-      <div class="interval-row"><label for="intervalSelect">Обновлять данные</label><select id="intervalSelect"><option value="0">Только вручную</option><option value="5000">Каждые 5 секунд (быстро, нагружает телефон)</option><option value="15000" selected>Каждые 15 секунд</option><option value="30000">Каждые 30 секунд</option><option value="60000">Каждую минуту</option></select></div>
++      <div class="interval-row"><label for="intervalSelect">Обновлять данные</label><select id="intervalSelect"><option value="0">Только вручную</option><option value="5000">Каждые 5 секунд (быстро, нагружает телефон)</option><option value="15000">Каждые 15 секунд</option><option value="30000" selected>Каждые 30 секунд (рекомендуется)</option><option value="60000">Каждую минуту</option></select></div>
+       <div id="syncConfig" class="sync-config">
+         <div class="field-group"><label for="githubToken">GitHub-токен</label><input id="githubToken" type="password" placeholder="Можно оставить пустым для публичного Gist" autocomplete="off" spellcheck="false"><p class="help-text">Для записи в Gist создайте <a href="https://github.com/settings/tokens/new" target="_blank" rel="noopener noreferrer">Personal Access Token</a> с правом <strong>gist</strong>. Без токена журнал откроется в режиме «только чтение» из публичного Gist.</p></div>
+         <div class="field-group"><label for="gistId">ID или ссылка на Gist (Secret или Public)</label><input id="gistId" type="text" placeholder="https://gist.github.com/…" autocomplete="off" spellcheck="false"></div>
+diff --git a/styles.css b/styles.css
+index 537e568..bd4406b 100644
+--- a/styles.css
++++ b/styles.css
+@@ -2853,6 +2853,19 @@ input:not([type]), select, textarea { border-radius: var(--radius-sm); }
+     -webkit-backdrop-filter: blur(10px) saturate(140%); backdrop-filter: blur(10px) saturate(140%);
+   }
+ 
++  /* The fixed glass dock and the modal backdrop were blurring a copy of the
++     ENTIRE page behind them on every scroll frame — by far the most expensive
++     effect for weak phone GPUs. Limit each blur to the small area directly
++     under the element; the dimmed layer still reads as frosted glass. */
++  .glass-navigation { -webkit-backdrop-filter: blur(12px) saturate(135%) ; backdrop-filter: blur(12px) saturate(135%); }
++  .modal-backdrop { -webkit-backdrop-filter: blur(6px) saturate(120%) ; backdrop-filter: blur(6px) saturate(120%); }
++
++  /* Hover lift used to change box-shadow + transform together: every pointer
++     move over the journal re-rasterized the button (expensive on phones).
++     The shadow is now static, only the cheap transform animates. */
++  #attendanceTableCard .attendance-button { transition: transform var(--t-fast, .15s) ease; }
++  #attendanceTableCard .attendance-button:hover { box-shadow: none; }
++
+   /* Infinite "pulse" animations (badge dot, maintenance icon/badge, sync
+      dot) kept the main thread painting even when nothing happened. They
+      now run on their own layers and stop entirely under reduced-motion. */
+-- 
+2.39.5
+
