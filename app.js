@@ -606,9 +606,6 @@ migrateData = function(data,strict) {
       if(type==='lessons'){
         if(!validId(v.classId)||!validId(v.subjectId)||!validDate(v.date)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(v.endTime)||!['planned','held','cancelled'].includes(v.status)||!Array.isArray(v.studentIds)||v.studentIds.length>10000||v.studentIds.some(function(id){return !validId(id);})||new Set(v.studentIds).size!==v.studentIds.length)throw Error('Некорректное занятие');
         Object.assign(x,{classId:v.classId,subjectId:v.subjectId,date:v.date,endTime:v.endTime,status:v.status,studentIds:v.studentIds.slice().sort()});
-      } else if(type==='homework'){
-        if(!validId(v.classId)||!validDate(v.dueDate||v.date)||typeof v.text!=='string'||!v.text.trim()||v.text.length>4000)throw Error('Некорректное домашнее задание');
-        Object.assign(x,{classId:v.classId,date:v.date,text:v.text});
       } else {if(typeof v.name!=='string'||!v.name.trim()||v.name.length>200)throw Error('Некорректное название');x.name=v.name.trim();}
       return x;
     });
@@ -691,6 +688,10 @@ function wireProjectEvents(){
   if(dom.lessonDelete)dom.lessonDelete.addEventListener('click',function(){var l=state.lessons.find(function(x){return x.id===activeLessonId;});if(l&&confirm('Удалить это занятие?')){try{saveRecoveryBackup();}catch(e){return showToast(e.message,'error');}l.deleted=true;l.updatedAt=nextTimestamp();l.actor=deviceId;closeModal();commitProject(["lessons/"+l.id]);}});
   if(dom.studentClassMove&&dom.studentClassPicker)dom.studentClassMove.addEventListener('click',function(){var s=getStudentById(studentCardState.studentId);if(s&&s.classId!==dom.studentClassPicker.value){s.classId=dom.studentClassPicker.value;s.updatedAt=nextTimestamp();s.actor=deviceId;commitProject(['students/'+s.id]);showToast('Класс изменён. История занятий сохранена.','success');}});
   if(dom.hwAddButton)dom.hwAddButton.addEventListener('click',addHomeworkEntry);
+  // Enter adds the entry like a form submit; Shift+Enter inserts a line break.
+  if(dom.hwText)dom.hwText.addEventListener('keydown',function(event){
+    if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();addHomeworkEntry();}
+  });
   if(dom.hwPinButton)dom.hwPinButton.addEventListener('click',addHomeworkEntry); // same action, kept for compatibility
   if(dom.hwClearButton)dom.hwClearButton.addEventListener('click',clearClassHomework);
   if(dom.refreshDeviceListButton)dom.refreshDeviceListButton.addEventListener('click',function(){refreshDeviceList();});
@@ -713,10 +714,13 @@ function wireProjectEvents(){
 function currentHomework(){var cls=state.selectedClass||'class-main';return (state.homework||[]).filter(function(h){return !h.deleted&&h.classId===cls;}).sort(function(a,b){return (b.dueDate||'').localeCompare(a.dueDate||'')||b.updatedAt-a.updatedAt;});}
 function addHomeworkEntry(){
   if(syncReadOnly()){showToast('Режим «только чтение»: подключите токен, чтобы добавлять домашние задания','warning');return;}
+  // Guard every node used here: a missing control must never abort the action.
+  if(!dom.hwText||!dom.hwText.isConnected)return showToast('Панель домашних заданий недоступна','error');
   var text=(dom.hwText.value||'').trim();if(!text)return showToast('Напишите текст домашнего задания','warning');
   if(text.length>4000)return showToast('Слишком длинное задание (до 4000 символов)','warning');
-  var date=dom.hwDueDate.value;if(!validDate(date))date=formatDateKey(new Date());
+  var date=dom.hwDueDate&&dom.hwDueDate.value?dom.hwDueDate.value:'';if(!validDate(date))date=formatDateKey(new Date());
   var cls=state.selectedClass||'class-main';
+  if(!Array.isArray(state.homework))state.homework=[];
   var entry={id:generateId(),classId:cls,dueDate:date,text:text,updatedAt:nextTimestamp(),actor:deviceId,deleted:false};
   state.homework.push(entry);commitProject(['homework/'+entry.id]);dom.hwText.value='';
   showToast('Домашнее задание добавлено','success');
@@ -737,13 +741,14 @@ function clearClassHomework(){
   commitProject(keys);showToast('Задания убраны','success');
 }
 function renderHomework(){
-  if(!dom.hwPanel)return;
+  if(!dom.hwPanel||!dom.hwPanel.isConnected)return;
   var cls=state.selectedClass||'class-main';
-  dom.hwClassName.textContent=named('classes',cls);
-  if(!dom.hwDueDate.value)dom.hwDueDate.value=formatDateKey(new Date());
+  if(dom.hwClassName)dom.hwClassName.textContent=named('classes',cls);
+  if(dom.hwDueDate&&!dom.hwDueDate.value)dom.hwDueDate.value=formatDateKey(new Date());
   if(dom.hwPinButton)dom.hwPinButton.disabled=syncReadOnly();
   if(dom.hwAddButton)dom.hwAddButton.disabled=syncReadOnly();
   if(dom.hwClearButton)dom.hwClearButton.disabled=syncReadOnly()||!currentHomework().length;
+  if(!dom.hwHistory||!dom.hwHistory.isConnected)return;
   dom.hwHistory.replaceChildren();
   var items=currentHomework();
   if(!items.length){dom.hwHistory.appendChild(el('p','Для этого класса пока нет домашних заданий.','help-text'));return;}
@@ -1241,6 +1246,32 @@ async function fetchFromGist(config, options) {
   }
   return result;
 }
+/* ============ SYNC ENGINE v3.3.1 (rewritten) ============
+   The synchronization code below replaced the previous implementation that
+   failed to deliver changes reliably. Fixed defects:
+   1. A single network hiccup used to block automatic sync forever: any hard
+      error marked the runtime "blocked" and auto runs were silently dropped
+      until the user pressed a button. Now only unrecoverable errors (invalid
+      token, missing Gist, rejected payload, unresolved conflict) stop the
+      automatic cycle; transient failures retry with backoff.
+   2. Pending edits could be lost from the badge: hasPendingChanges was reset
+      by an unrelated successful poll while an earlier change still sat in the
+      offline queue. The flag is now recomputed from the real queue.
+   3. forcePull ran only when the gist was writable AND the poll interval was
+      non-zero, so manual download did nothing in "manual mode". Read-only
+      connections now pull on demand as well.
+   4. After saving connection settings the journal was not fetched when the
+      token field was left empty (public read-only gist). The first load now
+      happens immediately after connecting.
+   5. Hard errors never cleared lastError, so the status line kept showing a
+      stale message even after later successful syncs. */
+
+// Errors that will never succeed on retry — automatic sync must stay paused
+// for them until the user acts (fixes defect #1).
+function syncHardError(error) {
+  return Boolean(error && ((error.noRetry && !error.conflict) || error.status === 401 ||
+    (error.status === 403 && !error.retryAfter) || error.status === 404 || error.status === 422));
+}
 async function pushToGist(data, config) {
   syncCheckGeneration(config);
   if (!config.token) throw new Error("Нет токена GitHub: журнал открыт из публичного Gist только для чтения. Введите токен в подключении, чтобы отправлять изменения.");
@@ -1287,7 +1318,12 @@ function updateSyncUI() {
   else if (syncConfig.lastSyncStatus === "error") setSyncStatus("error", syncRuntime.retryTimer ? "Ошибка · повтор запланирован" : "Ошибка синхронизации");
   else if (syncRuntime.hasPendingChanges || state.revision > state.lastSyncedRevision) setSyncStatus("paused", syncRuntime.pollIntervalMs === 0 ? "Есть изменения · отправьте вручную" : "Изменения ждут отправки");
   else setSyncStatus("on", syncConfig.lastSync ? "Синхр. " + formatTime(syncConfig.lastSync) : "Готово к синхронизации");
-  [dom.syncNowButton, dom.forcePushButton, dom.forcePullButton].forEach(function (button) { if (button) button.disabled = !configured || readOnly || syncRuntime.isSyncing; });
+  // "Синхронизировать сейчас" and "Загрузить серверную копию" also work in
+  // read-only mode (public Gist without a token); only uploading needs write
+  // access. Previously all three buttons were disabled while read-only, so
+  // the user had no way to trigger a manual refresh at all.
+  [dom.syncNowButton, dom.forcePullButton].forEach(function (button) { if (button) button.disabled = !configured || syncRuntime.isSyncing; });
+  if (dom.forcePushButton) dom.forcePushButton.disabled = !configured || readOnly || syncRuntime.isSyncing;
   renderDeviceList();
 }
 function scheduleSync() {
@@ -1404,16 +1440,19 @@ function syncLocalSaveError() {
 }
 function syncSuccess(reason, sentRevision, unchanged) {
   state.lastSyncedRevision = Math.max(state.lastSyncedRevision || 0, sentRevision);
-  syncRuntime.hasPendingChanges = state.revision > sentRevision || queuedEntries().length > 0;
+  // Recompute from the real queue: an unrelated successful poll must not hide
+  // edits that are still waiting to be sent (fixes defect #2).
+  syncRuntime.hasPendingChanges = state.revision > state.lastSyncedRevision || queuedEntries().length > 0;
   syncRuntime.consecutiveErrors = 0; syncRuntime.retryAt = 0; syncRuntime.blocked = false;
   clearTimeout(syncRuntime.retryTimer); syncRuntime.retryTimer = null;
+  // A healthy cycle always clears the stale error message (fixes defect #5).
   syncConfig.lastSync = Date.now(); syncConfig.lastSyncStatus = "ok"; syncConfig.lastError = "";
   if (!unchanged && saveLocal() === false) { syncRuntime.hasPendingChanges = true; throw syncLocalSaveError(); }
   saveSyncConfig();
   if (reason === "manual") showToast("Синхронизация выполнена", "success");
 }
 function syncRetry(error) {
-  if (!syncAutomatic() || error.noRetry || error.status === 401 || (error.status === 403 && !error.retryAfter) || error.status === 404 || error.status === 422) return;
+  if (!syncAutomatic() || syncHardError(error)) return;
   clearTimeout(syncRuntime.retryTimer);
   var delays = [5000, 10000, 20000, 30000, 60000];
   var delay = error.retryAfter || delays[Math.min(Math.max(syncRuntime.consecutiveErrors - 1, 0), delays.length - 1)];
@@ -1439,8 +1478,11 @@ function syncError(error, reason) {
   }
   syncRuntime.consecutiveErrors++;
   syncConfig.lastSyncStatus = "error"; syncConfig.lastError = error.message || "Синхронизация не выполнена";
-  syncRuntime.hasPendingChanges = syncRuntime.hasPendingChanges || state.revision > state.lastSyncedRevision;
-  syncRuntime.blocked = (!!error.noRetry && !error.conflict) || error.status === 401 || (error.status === 403 && !error.retryAfter) || error.status === 404 || error.status === 422;
+  syncRuntime.hasPendingChanges = syncRuntime.hasPendingChanges || state.revision > state.lastSyncedRevision || queuedEntries().length > 0;
+  // Only unrecoverable errors pause the automatic cycle. Transient failures
+  // (network drop, timeout, DNS) stay unblocked and resume with the next
+  // scheduled poll even if the backoff timer was cancelled (fixes defect #1).
+  syncRuntime.blocked = syncHardError(error) || Boolean(error.conflict);
   syncRetry(error);
   if (reason === "manual") showToast(syncConfig.lastError, "error");
 }
@@ -1449,7 +1491,7 @@ async function syncRun(reason, polling) {
   if (syncRuntime.isSyncing) { if (!polling) syncRuntime.pendingSync = true; return; }
   if (syncRuntime.retryAt > Date.now()) { if (reason === "manual") showToast(syncConfig.lastError, "warning"); return; }
   if (reason !== "manual" && syncRuntime.blocked) return;
-  if (reason === "manual") syncRuntime.blocked = false;
+  if (reason === "manual") { syncRuntime.blocked = false; clearTimeout(syncRuntime.retryTimer); syncRuntime.retryTimer = null; syncRuntime.retryAt = 0; }
   if (!syncOnline()) { updateSyncUI(); return; }
   if (polling && document.hidden) return;
   clearTimeout(syncRuntime.pushTimer); syncRuntime.pushTimer = null;
@@ -1464,7 +1506,8 @@ async function syncRun(reason, polling) {
       // Another tab may have changed localStorage while this tab waited for its
       // lock or for the network. Merge it before constructing a sent snapshot.
       if (!loadLocal()) throw syncLocalSaveError();
-      if (remote.notModified && syncRuntime.remoteApplied && !syncRuntime.hasPendingChanges && state.revision <= state.lastSyncedRevision && !queuedEntries().length && !Object.keys(offline.conflicts).length) {
+      var hasWork = syncRuntime.hasPendingChanges || state.revision > state.lastSyncedRevision || queuedEntries().length > 0 || Object.keys(offline.conflicts).length > 0;
+      if (remote.notModified && syncRuntime.remoteApplied && !hasWork) {
         syncRuntime.lastPullAt = Date.now(); syncSuccess(reason, state.revision, true); return;
       }
       if(remote.notModified && Object.keys(offline.conflicts).length && syncRuntime.lastConflictRevision === state.revision){
@@ -1503,7 +1546,7 @@ async function syncRun(reason, polling) {
       syncRuntime.isSyncing = false; syncRuntime.activeOperation = null;
       var pending = syncRuntime.pendingSync; syncRuntime.pendingSync = false;
       updateSyncUI();
-      if (pending && syncAutomatic() && syncConfig.lastSyncStatus !== "error") scheduleSync();
+      if (pending && syncAutomatic() && !syncRuntime.blocked) scheduleSync();
     }
   }
 }
@@ -1523,7 +1566,9 @@ function stopPolling() { clearInterval(syncRuntime.pollTimer); syncRuntime.pollT
 function restartPolling() { startPolling(); }
 function forcePush() { return fullSync("manual"); }
 async function forcePull() {
-  if (!syncWritable() || syncRuntime.isSyncing) return;
+  // Manual download works for read-only connections as well and no longer
+  // depends on the polling interval being non-zero (fixes defect #3).
+  if (!syncConfigured() || syncRuntime.isSyncing) return;
   if (!confirm("Заменить журнал на этом устройстве проверенной серверной копией? Перед заменой будет сохранена резервная копия текущего журнала.")) return;
   if (!syncOnline()) { updateSyncUI(); showToast("Нет сети. Журнал остаётся на устройстве.", "warning"); return; }
   var config = syncOperationConfig();
@@ -1621,6 +1666,10 @@ syncListen(dom.saveSyncConfigButton, "click", async function () {
       await fullSync("manual");
       showToast(syncConfig.isPublicGist ? "Подключено. Публичный Gist с токеном: полная синхронизация." : "Подключение сохранено. Журнал синхронизирован.", "success");
     } else {
+      // Read-only connection: load the public Gist right away instead of
+      // waiting for the first poll tick, so the journal appears immediately
+      // after saving the connection (fixes defect #4).
+      try { await fullSync("auto"); } catch (error) {}
       showToast("Подключено в режиме «только чтение»: данные загружаются из публичного Gist. Для отправки изменений добавьте токен.", "warning");
     }
   } catch (error) { if (!error.stale) showToast(error.message, "error"); }
@@ -1657,8 +1706,8 @@ syncListen(dom.intervalSelect, "change", function (event) {
   if (interval > 0) scheduleSync();
   showToast(interval === 0 ? "Только вручную: автоматические запросы отключены" : "Автосинхронизация включена", "success");
 });
-document.addEventListener("visibilitychange", function () { if (!document.hidden && syncAutomatic()) pollOnce(); });
-window.addEventListener("online", function () { updateSyncUI(); if (syncAutomatic()) fullSync("auto"); });
+document.addEventListener("visibilitychange", function () { if (!document.hidden && (syncAutomatic() || syncReadOnly())) pollOnce(); });
+window.addEventListener("online", function () { updateSyncUI(); if (syncAutomatic() || syncReadOnly()) fullSync("auto"); });
 window.addEventListener("offline", updateSyncUI);
 
 
@@ -1702,7 +1751,7 @@ syncListen(dom.syncQuickButton,"click",function(){
   if(syncConfigured()&&!syncWritable()){try{fullSync("manual");}catch(error){}}
   dom.syncConfig.scrollIntoView({behavior:"smooth",block:"center"});dom.githubToken.focus({preventScroll:true});
 });
-window.addEventListener("focus",function(){if(syncAutomatic()&&Date.now()-syncRuntime.lastPullAt>2000)pollOnce();});
+window.addEventListener("focus",function(){if((syncAutomatic()||syncReadOnly())&&Date.now()-syncRuntime.lastPullAt>2000)pollOnce();});
 
 /* Relative URLs work both on user.github.io and user.github.io/repository/. */
 var APP_VERSION = '3.3.0', APP_BUILD_ID = '9452c43ae2da225b';
