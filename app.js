@@ -753,7 +753,106 @@ function flushRender() {
   dom.searchResultsInfo.textContent = state.searchQuery.trim() ? "Найдено " + getFilteredStudents().length + " из " + getVisibleStudents().length : "Всего " + getVisibleStudents().length;
   dom.clearSearchButton.hidden = !state.searchQuery; dom.versionButtonText.textContent = state.settings.versionText; dom.versionButton.setAttribute("aria-label", state.settings.versionText + ". Открыть настройки по коду"); if (dom.journalEdition) dom.journalEdition.textContent = settingsVersionText(); renderNews(); renderMaintenance(); renderHomework(); renderOfflineNow();
   if (studentAddMode === "registered") populateStudentAccountSelect();
+  renderAccountPanel();
   if (!activeModal && focused && focused.dataset && focused.dataset.dateKey && !focused.isConnected) { var replacement = document.querySelector('.attendance-button[data-student-id="' + focused.dataset.studentId + '"][data-date-key="' + focused.dataset.dateKey + '"]'); if (replacement) replacement.focus(); }
+}
+
+/* ---------- Account panel (sidebar «Аккаунт») ---------- */
+var accountNavActive = false; // true while the user is on the account screen
+function escapeHtml(value) {
+  return String(value == null ? "" : value).replace(/[&<>"']/g, function (ch) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[ch];
+  });
+}
+function formatAuthDate(ts) {
+  if (!(ts > 0)) return "—";
+  var d = new Date(ts);
+  var pad = function (n) { return String(n).length < 2 ? "0" + n : String(n); };
+  return pad(d.getDate()) + "." + pad(d.getMonth() + 1) + "." + d.getFullYear() + ", " + pad(d.getHours()) + ":" + pad(d.getMinutes());
+}
+function findAuthAccountById(id) {
+  if (!id) return null;
+  var accounts = loadAuthAccounts();
+  for (var i = 0; i < accounts.length; i++) { if (accounts[i].id === id) return accounts[i]; }
+  return null;
+}
+// Linked journal student for the signed-in account (added via «Зарегистрированный»).
+function linkedStudentForSession(session) {
+  if (!session || !session.accountId) return null;
+  var students = getVisibleStudents().concat(state.students || []);
+  var seen = {};
+  for (var i = 0; i < students.length; i++) {
+    var s = students[i];
+    if (!s || s.deleted || seen[s.id]) continue;
+    seen[s.id] = true;
+    if (s.accountId === session.accountId) return s;
+    if (session.fullName && authNormalizeName(s.name || "") === authNormalizeName(session.fullName)) return s;
+  }
+  return null;
+}
+function renderAccountPanel() {
+  var body = dom.accountCardBody;
+  if (!body) return;
+  var perms = effectivePermissions();
+  var session = currentAuthSession();
+  var account = session ? findAuthAccountById(session.accountId) : null;
+  var meta = (state.deviceMeta || {})[deviceId] || {};
+  var rows = [];
+  rows.push(["Пользователь", session ? session.fullName : "Не авторизован"]);
+  rows.push(["Роль устройства", DEVICE_ROLES[perms.role].label]);
+  rows.push(["Тех. администрация", perms.techAdmin ? "Выдана (полный доступ)" : "Нет"]);
+  rows.push(["Имя устройства", meta.name || deviceId.slice(0, 8)]);
+  if (account) rows.push(["Аккаунт создан", formatAuthDate(account.createdAt)]);
+  if (session) rows.push(["Текущий вход", (session.method === "register" ? "регистрация" : session.method === "secret" ? "секретное слово" : "код из SMS") + " · " + formatAuthDate(session.at)]);
+  var linked = session ? linkedStudentForSession(session) : null;
+  rows.push(["Профиль в журнале", linked ? linked.name : "Не привязан"]);
+  var html = '<dl class="account-list">';
+  rows.forEach(function (r) { html += "<div><dt>" + escapeHtml(r[0]) + "</dt><dd>" + escapeHtml(r[1]) + "</dd></div>"; });
+  html += "</dl>";
+  if (perms.role === "student") html += '<p class="help-text">Роль «Ученик»: доступны только домашние задания и своя посещаемость.</p>';
+  else if (perms.role === "observer") html += '<p class="help-text">Роль «Наблюдатель»: полный обзор без права редактирования.</p>';
+  else html += '<p class="help-text">Роль «Учитель»: полный доступ к журналу, ученикам и домашним заданиям.</p>';
+  body.innerHTML = html;
+  if (dom.accountChangeRoleButton) {
+    var canManage = perms.canManageDevices;
+    dom.accountChangeRoleButton.disabled = !canManage;
+    dom.accountChangeRoleButton.title = canManage ? "Сменить роль этого устройства" : "Смену роли может выполнить учитель или тех. администрация";
+  }
+  if (dom.accountLogoutButton) dom.accountLogoutButton.disabled = !session;
+}
+function openAccountView() {
+  accountNavActive = true;
+  if (dom.accountPanel) dom.accountPanel.hidden = false;
+  renderAccountPanel();
+  var app = document.getElementById("journalApp");
+  if (app) Array.prototype.forEach.call(app.querySelectorAll(":scope > *"), function (el) { el.hidden = true; });
+  if (dom.accountPanel) dom.accountPanel.hidden = false;
+  if (app) app.setAttribute("data-account-view", "true");
+  window.scrollTo({ top: 0, behavior: "auto" });
+}
+function closeAccountView() {
+  accountNavActive = false;
+  var app = document.getElementById("journalApp");
+  if (app) {
+    app.removeAttribute("data-account-view");
+    Array.prototype.forEach.call(app.querySelectorAll(":scope > *"), function (el) { el.hidden = false; });
+  }
+  if (dom.accountPanel) dom.accountPanel.hidden = true;
+  if (typeof renderMaintenance === "function") renderMaintenance();
+}
+function changeOwnDeviceRole() {
+  var perms = effectivePermissions();
+  if (!perms.canManageDevices) { showToast("Смена роли доступна учителю или тех. администрации", "warning"); return; }
+  var current = deviceRole(deviceId);
+  var lines = DEVICE_ROLE_KEYS.map(function (key) {
+    return (key === current ? "▶ " : "• ") + DEVICE_ROLES[key].label + " — " + DEVICE_ROLES[key].hint;
+  }).join("\n");
+  var answer = window.prompt("Выберите роль этого устройства.\n\n" + lines + "\n\nВведите номер роли (1–3):", String(DEVICE_ROLE_KEYS.indexOf(current) + 1));
+  if (answer === null) return;
+  var index = parseInt(answer.trim(), 10) - 1;
+  if (!(index >= 0 && index < DEVICE_ROLE_KEYS.length)) { showToast("Нужно число от 1 до " + DEVICE_ROLE_KEYS.length, "warning"); return; }
+  setDeviceRole(deviceId, DEVICE_ROLE_KEYS[index]);
+  renderAccountPanel();
 }
 function render() {
   if (renderScheduled) return;
@@ -906,6 +1005,15 @@ function init() {
   // or registration does the journal unlock for this device.
   wireAuthGate();
   ["authLogoutButton", "authAccountInfo"].forEach(function (id) { dom[id] = document.getElementById(id); });
+  ["accountPanel", "accountCardBody", "accountChangeRoleButton", "accountLogoutButton"].forEach(function (id) { dom[id] = document.getElementById(id); });
+  if (dom.accountChangeRoleButton) dom.accountChangeRoleButton.addEventListener("click", changeOwnDeviceRole);
+  if (dom.accountLogoutButton) dom.accountLogoutButton.addEventListener("click", function () {
+    if (!confirm("Выйти из аккаунта на этом устройстве? Журнал снова потребует входа или регистрации.")) return;
+    clearAuthSession(); state.devUnlocked = false;
+    try { if (storage) storage.removeItem(SETTINGS_UNLOCK_KEY); } catch (error) {}
+    setDeviceTechAdmin(deviceId, false); closeAccountView(); closeModal(); renderMaintenance(); openAuthGate(loadAuthAccounts().length ? "login" : "register");
+    showToast("Вы вышли из аккаунта. Для продолжения нужен вход.", "info");
+  });
   if (dom.authLogoutButton) dom.authLogoutButton.addEventListener("click", function () {
     if (!confirm("Выйти из аккаунта на этом устройстве? Журнал снова потребует входа или регистрации.")) return;
     clearAuthSession(); state.devUnlocked = false;
@@ -1049,7 +1157,9 @@ function wireViewEvents() {
     var destination=button.dataset.nav;
     if(!["reports","settings"].includes(destination))navigation.querySelectorAll("[data-nav]").forEach(function(item){item.classList.toggle("is-active",item===button);if(item===button)item.setAttribute("aria-current","location");else item.removeAttribute("aria-current");});
     if(destination==="reports"){dom.reportsButton.click();return;}
-    if(destination==="settings"){dom.versionButton.click();return;}
+    if(destination==="settings"){closeAccountView();dom.versionButton.click();return;}
+    if(destination==="account"){openAccountView();return;}
+    closeAccountView();
     var target=destination==="homework"?dom.hwPanel:document.getElementById("journalControls");
     if(destination==="homework")dom.hwPanel.open=true;
     if(target)target.scrollIntoView({behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"start"});
