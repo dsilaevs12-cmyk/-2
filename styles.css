@@ -2712,3 +2712,19 @@ body[data-tech-admin] .role-banner{background:#dff1ea;border-color:#176c5c;color
 
 /* Global "appearance:none" hides radio/checkbox controls — restore them for the auth 2FA picker. */
 .auth-2fa-option input[type="radio"] { appearance: auto; -webkit-appearance: radio; display: block; visibility: visible; opacity: 1; width: 18px; height: 18px; margin: 0; }
+
+/* ---------- Account panel (sidebar «Аккаунт») ---------- */
+.account-panel { margin: 8px 0 16px; padding: 20px 22px; }
+.account-body { padding: 4px 0; }
+.account-list { display: grid; gap: 10px; margin: 0; }
+.account-list > div { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-md, 12px); background: var(--surface, rgba(127,127,127,.06)); }
+.account-list dt { font-size: .85rem; opacity: .75; margin: 0; }
+.account-list dd { margin: 0; font-weight: 600; text-align: right; word-break: break-word; }
+.account-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-start; padding-top: 6px; }
+.account-actions button { width: auto; }
+@media (max-width: 700px) {
+  .account-panel { padding: 16px 14px; }
+  .account-list > div { flex-direction: column; align-items: stretch; gap: 2px; }
+  .account-list dd { text-align: left; }
+  .account-actions { flex-direction: column; }
+}
