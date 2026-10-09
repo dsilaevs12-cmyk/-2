@@ -2624,17 +2624,25 @@ input[type="date"]:focus { outline: none; border-color: var(--primary); box-shad
 }
 @media print{.mobile-add-student{display:none!important}}
 /* Homework list (unlimited entries per class) */
-.hw-item{display:flex;flex-direction:column;gap:4px;padding:10px 12px;border:1px solid rgba(22,107,115,.18);border-radius:12px;margin-bottom:8px;background:rgba(255,255,255,.5)}
-.hw-text{font-size:14px;line-height:1.45;white-space:pre-wrap;word-break:break-word}
+.hw-item{display:flex;flex-direction:row;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid rgba(22,107,115,.18);border-radius:12px;margin-bottom:8px;background:rgba(255,255,255,.5)}
+.hw-main{display:flex;flex-direction:column;gap:4px;flex:1 1 auto;min-width:0}
+.hw-text{font-size:14px;line-height:1.45;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere}
 .hw-meta{font-size:11px;opacity:.65}
-.hw-delete{align-self:flex-end;margin-top:-6px;width:28px;height:28px;padding:0;border-radius:50%;line-height:1}
+/* Delete button must stay a fixed circle: never stretched or squashed by flex layout. */
+.hw-delete{flex:0 0 auto;width:30px;height:30px;min-width:30px;min-height:30px;max-width:30px;max-height:30px;padding:0;margin:0;border-radius:50%;font-size:16px;line-height:1;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box}
 @media (prefers-color-scheme:dark){.hw-item{background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.12)}}
 
 /* Homework: round "+" add button and due-date styling */
-.hw-add-round{width:46px;height:46px;flex-shrink:0;border-radius:50%;border:none;background:var(--accent,#167b7b);color:#fff;font-size:26px;line-height:1;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;padding:0 0 3px;box-shadow:0 3px 10px rgba(0,0,0,.18);transition:transform .12s ease,filter .12s ease}
+.hw-add-round{flex:0 0 auto;width:46px;height:46px;min-width:46px;min-height:46px;max-width:46px;max-height:46px;box-sizing:border-box;border-radius:50%;border:none;background:var(--accent,#167b7b);color:#fff;font-size:26px;line-height:1;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;padding:0 0 3px;box-shadow:0 3px 10px rgba(0,0,0,.18);transition:transform .12s ease,filter .12s ease}
 .hw-add-round:hover{filter:brightness(1.1);transform:scale(1.06)}
 .hw-add-round:active{transform:scale(.95)}
 .hw-add-round:disabled{opacity:.45;cursor:not-allowed;transform:none;filter:none}
 .hw-add-hint{align-self:center;font-size:12px;color:var(--muted,#555)}
 .hw-overdue{color:#c62828;font-weight:600}
 @media (prefers-color-scheme:dark){.hw-overdue{color:#ff8a80}}
+/* Mobile: global "button{width:100%}" would stretch the round + into an ellipse — pin icon buttons to circles. */
+@media screen and (max-width:700px){
+  .hw-add-round{width:46px;height:46px;flex:0 0 auto}
+  .project-panel-body .row-actions{align-items:center}
+  .project-panel-body .row-actions .secondary{flex:1 1 auto;min-width:0;white-space:normal}
+}

@@ -753,12 +753,15 @@ function renderHomework(){
   var items=currentHomework();
   if(!items.length){dom.hwHistory.appendChild(el('p','Для этого класса пока нет домашних заданий.','help-text'));return;}
   items.forEach(function(h){
+    // Fixed-size circular delete button: flex item must never stretch or shrink.
+    var del=el('button','×','secondary icon-button hw-delete');del.type='button';del.title='Убрать это задание';del.setAttribute('aria-label','Убрать это задание');
+    del.addEventListener('click',function(){deleteHomeworkEntry(h.id);});
     var row=el('div',undefined,'lesson-list-item hw-item');
+    var main=el('div',undefined,'hw-main');
     var dueTxt=h.dueDate?new Date(h.dueDate+'T00:00:00').toLocaleDateString('ru-RU'):'не указана';var overdue=!!h.dueDate&&h.dueDate<formatDateKey(new Date());var meta=el('span',(overdue?'⚠ Просрочено · ':'')+'Сдать к: '+dueTxt+' · добавлено '+new Date(h.updatedAt).toLocaleDateString('ru-RU'),'hw-meta'+(overdue?' hw-overdue':''));
     var body=el('span',h.text,'hw-text');
-    var del=el('button','×','secondary icon-button hw-delete');del.type='button';del.title='Убрать это задание';
-    del.addEventListener('click',function(){deleteHomeworkEntry(h.id);});
-    row.append(body,meta,del);dom.hwHistory.appendChild(row);
+    main.append(body,meta);
+    row.append(main,del);dom.hwHistory.appendChild(row);
   });
 }
 
