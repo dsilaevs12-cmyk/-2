@@ -2853,6 +2853,19 @@ input:not([type]), select, textarea { border-radius: var(--radius-sm); }
     -webkit-backdrop-filter: blur(10px) saturate(140%); backdrop-filter: blur(10px) saturate(140%);
   }
 
+  /* The fixed glass dock and the modal backdrop were blurring a copy of the
+     ENTIRE page behind them on every scroll frame — by far the most expensive
+     effect for weak phone GPUs. Limit each blur to the small area directly
+     under the element; the dimmed layer still reads as frosted glass. */
+  .glass-navigation { -webkit-backdrop-filter: blur(12px) saturate(135%) ; backdrop-filter: blur(12px) saturate(135%); }
+  .modal-backdrop { -webkit-backdrop-filter: blur(6px) saturate(120%) ; backdrop-filter: blur(6px) saturate(120%); }
+
+  /* Hover lift used to change box-shadow + transform together: every pointer
+     move over the journal re-rasterized the button (expensive on phones).
+     The shadow is now static, only the cheap transform animates. */
+  #attendanceTableCard .attendance-button { transition: transform var(--t-fast, .15s) ease; }
+  #attendanceTableCard .attendance-button:hover { box-shadow: none; }
+
   /* Infinite "pulse" animations (badge dot, maintenance icon/badge, sync
      dot) kept the main thread painting even when nothing happened. They
      now run on their own layers and stop entirely under reduced-motion. */

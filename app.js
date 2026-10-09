@@ -7,10 +7,15 @@ var INTERVAL_KEY = "attendance_poll_interval";
 var GIST_FILENAME = "attendance.json";
 // Sync pacing (performance): polling the Gist API every 5 s on a phone drains
 // battery and repeatedly re-merges/re-renders the whole journal — the main
-// cause of interface lag. New default: 15 s with an exponential backoff up to
+// cause of interface lag. New default: 30 s with an exponential backoff up to
 // 60 s while the connection keeps failing. Pushes after edits are debounced
-// 1.2 s so rapid tapping no longer queues several uploads in a row.
-var DEFAULT_POLL_INTERVAL_MS = 15000, PUSH_DEBOUNCE_MS = 1200;
+// 2.5 s so rapid tapping no longer queues several uploads in a row.
+var DEFAULT_POLL_INTERVAL_MS = 30000, PUSH_DEBOUNCE_MS = 2500;
+// One-time migration of previously saved intervals: devices that still carry
+// the old aggressive "5 s" or "15 s" setting would keep hammering GitHub and
+// re-merging/re-rendering every few seconds — the main background lag source.
+// Manual mode (0) and the gentle "60 s" choice are left untouched.
+function migratePollInterval(ms) { return ms === 5000 || ms === 15000 ? DEFAULT_POLL_INTERVAL_MS : ms; }
 var SETTINGS_UNLOCK_KEY = "attendance_settings_unlocked";
 var SETTINGS_CODE_SET_KEY = "attendance_settings_code_set";
 var BACKUP_KEY = "attendance_recovery_backups";
@@ -298,7 +303,12 @@ function markChanged() { state.revision++; syncRuntime.hasPendingChanges = true;
 var saveLocalTimer = null;
 function scheduleSaveLocal() {
   if (saveLocalTimer) return;
-  saveLocalTimer = setTimeout(function () { saveLocalTimer = null; saveLocal(); }, 150);
+  // 600 ms instead of 150: saving serializes the WHOLE journal (JSON.stringify)
+  // and re-reads it from localStorage on every call. Tapping cells in quick
+  // succession used to fire this cycle many times per second — the main cause
+  // of input lag on phones. Data is still flushed synchronously when the tab
+  // is hidden or closed, so nothing is lost.
+  saveLocalTimer = setTimeout(function () { saveLocalTimer = null; saveLocal(); }, 600);
 }
 function flushSaveLocal() { if (saveLocalTimer) { clearTimeout(saveLocalTimer); saveLocalTimer = null; saveLocal(); } }
 if (typeof document !== "undefined") {
@@ -1844,6 +1854,13 @@ function loadInterval() {
       if(interval === 5000 || interval === 30000) { interval=15000; storage.setItem(INTERVAL_KEY,"15000"); }
       storage.setItem("attendance_sync_speed_v34","1");
     }
+    // v35: 5 s and 15 s cadences proved too heavy for phones (constant merge +
+    // re-render churn between taps). Upgrade them once to the calm 30 s pace.
+    if(storage && !storage.getItem("attendance_sync_speed_v35")) {
+      var migrated = migratePollInterval(interval);
+      if (migrated !== interval) { interval = migrated; storage.setItem(INTERVAL_KEY, String(interval)); }
+      storage.setItem("attendance_sync_speed_v35","1");
+    }
     if ([0, 5000, 15000, 30000, 60000].indexOf(interval) !== -1) syncRuntime.pollIntervalMs = interval;
   } catch (error) {}
 }
@@ -2200,7 +2217,7 @@ function scheduleSync() {
   syncRuntime.pushTimer = setTimeout(function () {
     syncRuntime.pushTimer = null;
     if (generation === syncRuntime.generation && syncAutomatic()) fullSync("auto");
-  }, typeof PUSH_DEBOUNCE_MS === "number" ? PUSH_DEBOUNCE_MS : 1500);
+  }, typeof PUSH_DEBOUNCE_MS === "number" ? PUSH_DEBOUNCE_MS : 2500);
 }
 function syncWithDeviceLock(config, callback) {
   if (navigator.locks && typeof navigator.locks.request === "function") {
