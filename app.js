@@ -25,7 +25,7 @@ var syncConfig = { enabled: false, token: "", gistId: "", isPublicGist: false, l
 var deviceId = "", logicalTime = 0, activeModal = null, previousFocus = null, modalStack = [];
 var attendanceModalState = { open: false, studentId: "", dateKey: "", currentStatus: STATUS_UNMARKED };
 var dom = {};
-["studentName", "addStudentButton", "monthPicker", "previousMonthButton", "nextMonthButton", "todayButton", "monthTitle", "tableHead", "tableBody", "emptyMessage", "searchInput", "clearSearchButton", "searchResultsInfo", "noSearchResults", "toast", "syncStatus", "syncStatusText", "toggleSyncConfigButton", "syncConfig", "githubToken", "gistId", "gistPublicCheckbox", "publicGistWarning", "saveSyncConfigButton", "testConnectionButton", "disableSyncButton", "syncNowButton", "forcePushButton", "forcePullButton", "debugButton", "refreshDebugButton", "copyDebugButton", "debugBlock", "debugPre", "intervalSelect", "newsBanner", "newsText", "newsCloseButton", "versionButton", "versionButtonText", "journalEdition", "devPanelModal", "devCloseButton", "devExitButton", "devVersionTextInput", "devSaveVersionTextButton", "devResetVersionTextButton", "devToggleMaintenanceButton", "devMaintenanceMessageInput", "devSaveMaintenanceMessageButton", "devResetMaintenanceMessageButton", "devNewsInput", "devSaveNewsButton", "devClearNewsButton", "maintenanceOverlay", "maintenanceMessageText", "maintenanceActiveBadge", "maintenanceDevAccessButton", "attendanceModal", "attCloseButton", "attStudentName", "attDateText", "attOptions", "localSaveStatus", "exportBackupButton", "importBackupButton", "importBackupInput", "restoreBackupButton", "printButton", "summaryStudents", "summaryPresent", "summaryAbsent", "summaryLate", "coverageInfo", "journalApp", "printMonthTitle"].forEach(function (id) { dom[id] = document.getElementById(id); });
+["studentName", "addStudentButton", "monthPicker", "previousMonthButton", "nextMonthButton", "todayButton", "monthTitle", "tableHead", "tableBody", "emptyMessage", "searchInput", "clearSearchButton", "searchResultsInfo", "noSearchResults", "toast", "syncStatus", "syncStatusText", "toggleSyncConfigButton", "syncConfig", "githubToken", "gistId", "gistPublicCheckbox", "publicGistWarning", "saveSyncConfigButton", "testConnectionButton", "disableSyncButton", "syncNowButton", "forcePushButton", "forcePullButton", "debugButton", "refreshDebugButton", "copyDebugButton", "debugBlock", "debugPre", "intervalSelect", "newsBanner", "newsText", "newsCloseButton", "versionButton", "versionButtonText", "journalEdition", "devPanelModal", "devCloseButton", "devExitButton", "devVersionTextInput", "devSaveVersionTextButton", "devResetVersionTextButton", "devToggleMaintenanceButton", "devMaintenanceMessageInput", "devSaveMaintenanceMessageButton", "devResetMaintenanceMessageButton", "devNewsInput", "devSaveNewsButton", "devClearNewsButton", "devClearAllButton", "maintenanceOverlay", "maintenanceMessageText", "maintenanceActiveBadge", "maintenanceDevAccessButton", "attendanceModal", "attCloseButton", "attStudentName", "attDateText", "attOptions", "localSaveStatus", "exportBackupButton", "importBackupButton", "importBackupInput", "restoreBackupButton", "printButton", "summaryStudents", "summaryPresent", "summaryAbsent", "summaryLate", "coverageInfo", "journalApp", "printMonthTitle"].forEach(function (id) { dom[id] = document.getElementById(id); });
 dom.studentNameInput = dom.studentName;
 var storage = accessibleStorage("localStorage"), sessStorage = accessibleStorage("sessionStorage");
 
@@ -137,7 +137,8 @@ function cleanDeviceMeta(meta) {
     // not a base role — it stacks on top of any role. See DEVICE_ROLES below.
     var role = DEVICE_ROLE_KEYS.indexOf(entry.role) !== -1 ? entry.role : "teacher";
     var techAdmin = entry.techAdmin === true || entry.role === "admin"; // migrate legacy "admin" role → add-on flag
-    result[id] = { name: name, role: role, techAdmin: techAdmin, seenAt: Number.isFinite(seenAt) && seenAt > 0 ? seenAt : 0, updatedAt: Number.isFinite(updatedAt) && updatedAt > 0 ? updatedAt : 0 };
+    var roleExplicit = entry.roleExplicit === true;
+    result[id] = { name: name, role: role, roleExplicit: roleExplicit, techAdmin: techAdmin, seenAt: Number.isFinite(seenAt) && seenAt > 0 ? seenAt : 0, updatedAt: Number.isFinite(updatedAt) && updatedAt > 0 ? updatedAt : 0 };
   });
   return result;
 }
@@ -148,7 +149,7 @@ function mergeDeviceMeta(local, remote) {
     if (!existing) { result[id] = incoming; return; }
     var latest = (incoming.updatedAt || 0) >= (existing.updatedAt || 0) ? incoming : existing;
     var other = latest === incoming ? existing : incoming;
-    result[id] = { name: (latest.name || other.name || ""), role: DEVICE_ROLE_KEYS.indexOf(latest.role) !== -1 ? latest.role : (DEVICE_ROLE_KEYS.indexOf(other.role) !== -1 ? other.role : "teacher"), techAdmin: Boolean(latest.techAdmin || other.techAdmin), seenAt: Math.max(existing.seenAt || 0, incoming.seenAt || 0), updatedAt: Math.max(existing.updatedAt || 0, incoming.updatedAt || 0) };
+    result[id] = { name: (latest.name || other.name || ""), role: DEVICE_ROLE_KEYS.indexOf(latest.role) !== -1 ? latest.role : (DEVICE_ROLE_KEYS.indexOf(other.role) !== -1 ? other.role : "teacher"), roleExplicit: Boolean((latest === incoming ? incoming.roleExplicit : existing.roleExplicit) || (latest === existing ? existing.roleExplicit : incoming.roleExplicit)), techAdmin: Boolean(latest.techAdmin || other.techAdmin), seenAt: Math.max(existing.seenAt || 0, incoming.seenAt || 0), updatedAt: Math.max(existing.updatedAt || 0, incoming.updatedAt || 0) };
   });
   return result;
 }
@@ -166,6 +167,14 @@ var DEVICE_ROLES = {
 };
 var DEVICE_ROLE_KEYS = Object.keys(DEVICE_ROLES);
 function deviceRole(id) {
+  // Accounts created via the registration screen are students by default:
+  // if this device is logged in with such an account and no role was assigned
+  // explicitly yet, treat it as «Ученик».
+  var session = currentAuthSession();
+  if (id === deviceId && session && session.accountId && !session.roleExplicit) {
+    var entry0 = (state.deviceMeta || {})[id];
+    if (!entry0 || !entry0.roleExplicit) return "student";
+  }
   var entry = (state.deviceMeta || {})[id];
   return entry && DEVICE_ROLE_KEYS.indexOf(entry.role) !== -1 ? entry.role : "teacher";
 }
@@ -180,6 +189,7 @@ function setDeviceTechAdmin(id, enabled) {
   if (Boolean(entry.techAdmin) === Boolean(enabled)) return false;
   if (id !== deviceId && !(effectivePermissions().canManageDevices && syncWritable())) { showToast("Выдать статус «Тех. администрация» другому устройству может учитель/тех. админ с токеном", "warning"); return false; }
   entry.techAdmin = Boolean(enabled);
+  if (id === deviceId) { var sessT = currentAuthSession(); if (sessT) { sessT.roleExplicit = true; saveAuthSession(sessT); } } // tech-admin add-on also confirms the role explicitly
   entry.updatedAt = nextTimestamp();
   saveLocal(); scheduleSync(); renderDeviceList(); applyRoleRestrictions();
   showToast((enabled ? "Статус «Тех. администрация» выдан устройству " : "Статус «Тех. администрация» снят с устройства ") + (entry.name || id.slice(0, 4)), enabled ? "success" : "info");
@@ -191,6 +201,7 @@ function setDeviceRole(id, role) {
   var meta = state.deviceMeta || (state.deviceMeta = {});
   var entry = meta[id] || (meta[id] = { seenAt: 0 });
   entry.role = role;
+  entry.roleExplicit = true; // manual assignment overrides the "registered account → student" default
   entry.updatedAt = nextTimestamp();
   entry.seenAt = Math.max(entry.seenAt || 0, id === deviceId ? Date.now() : 0);
   saveLocal(); scheduleSync(); renderDeviceList(); applyRoleRestrictions();
@@ -426,8 +437,8 @@ async function handleAuthRegister() {
     saveAuthAccounts(accounts);
     saveAuthSession({ accountId: accounts[accounts.length - 1].id, fullName: fullName, method: "register", at: Date.now() });
     d.authRegisterForm.reset();
-    closeAuthGate(); render();
-    showToast("Аккаунт создан. Добро пожаловать, " + first + "!", "success");
+    closeAuthGate(); render(); applyRoleRestrictions(); renderDeviceList();
+    showToast("Аккаунт создан. Добро пожаловать, " + first + "! Роль по умолчанию — «Ученик».", "success");
   } catch (error) {
     d.authRegisterError.textContent = error.message || "Не удалось создать аккаунт.";
   } finally {
@@ -509,13 +520,56 @@ function updateSettings(patch) {
 function getVisibleStudents() { return state.students.filter(function (s) { return !s.deleted && (s.classId || "class-main") === (state.selectedClass || "class-main"); }).sort(function (a, b) { return a.name.localeCompare(b.name, "ru") || a.id.localeCompare(b.id); }); }
 function getStudentById(id) { return state.students.find(function (s) { return s.id === id; }) || null; }
 function getFilteredStudents() { var q = state.searchQuery.trim().toLocaleLowerCase("ru"); return getVisibleStudents().filter(function (s) { return !q || s.name.toLocaleLowerCase("ru").includes(q); }); }
+var studentAddMode = "new"; // "new" | "registered"
+function setStudentAddMode(mode) {
+  studentAddMode = mode === "registered" ? "registered" : "new";
+  var btnNew = document.getElementById("studentModeNew"), btnReg = document.getElementById("studentModeRegistered");
+  var wrapNew = document.getElementById("studentAddNewWrap"), wrapReg = document.getElementById("studentAddRegisteredWrap");
+  if (btnNew) { btnNew.classList.toggle("is-active", studentAddMode === "new"); btnNew.setAttribute("aria-pressed", String(studentAddMode === "new")); }
+  if (btnReg) { btnReg.classList.toggle("is-active", studentAddMode === "registered"); btnReg.setAttribute("aria-pressed", String(studentAddMode === "registered")); }
+  if (wrapNew) wrapNew.hidden = studentAddMode !== "new";
+  if (wrapReg) wrapReg.hidden = studentAddMode !== "registered";
+  if (studentAddMode === "registered") populateStudentAccountSelect();
+  else if (dom.studentNameInput) dom.studentNameInput.focus();
+}
+function populateStudentAccountSelect() {
+  var sel = document.getElementById("studentAccountSelect"); if (!sel) return;
+  var accounts = loadAuthAccounts().slice().sort(function (a, b) { return String(a.fullName || "").localeCompare(String(b.fullName || ""), "ru"); });
+  var existingNames = {}; getVisibleStudents().concat(state.students.filter(function(s){return !s.deleted;})).forEach(function (s) { existingNames[authNormalizeName(s.name)] = true; });
+  var available = accounts.filter(function (a) { return !existingNames[authNormalizeName(a.fullName)]; });
+  sel.innerHTML = "";
+  if (!available.length) {
+    var opt = document.createElement("option"); opt.value = ""; opt.textContent = accounts.length ? "Все аккаунты уже в журнале" : "Нет зарегистрированных аккаунтов"; sel.appendChild(opt);
+  } else {
+    available.forEach(function (a) { var opt = document.createElement("option"); opt.value = a.id; opt.textContent = a.fullName; sel.appendChild(opt); });
+  }
+  var hint = document.getElementById("studentAccountHint");
+  if (hint) hint.textContent = accounts.length ? ("Всего аккаунтов на устройстве: " + accounts.length + ". Доступных для добавления: " + available.length + ".") : "Аккаунты создаются на экране входа/регистрации этого устройства.";
+}
 function addStudent() {
   if (!effectivePermissions().canEditJournal) { showToast("Роль «" + DEVICE_ROLES[deviceRole(deviceId)].label + "»: добавление учеников недоступно", "warning"); return; }
-  var name = dom.studentNameInput.value.trim().replace(/\s+/g, " ");
-  if (!name) { dom.studentNameInput.focus(); showToast("Введите имя ученика", "warning"); return; }
+  var name, linkedAccountId = null;
+  if (studentAddMode === "registered") {
+    var sel = document.getElementById("studentAccountSelect");
+    var accId = sel && sel.value;
+    if (!accId) { showToast("Сначала выберите зарегистрированный аккаунт", "warning"); populateStudentAccountSelect(); return; }
+    var account = loadAuthAccounts().find(function (a) { return a.id === accId; });
+    if (!account) { showToast("Аккаунт не найден — обновите список", "warning"); populateStudentAccountSelect(); return; }
+    name = String(account.fullName || "").trim().replace(/\s+/g, " ");
+    if (getVisibleStudents().some(function (s) { return authNormalizeName(s.name) === authNormalizeName(name); })) { showToast("Этот аккаунт уже добавлен в журнал", "warning"); populateStudentAccountSelect(); return; }
+    linkedAccountId = account.id;
+  } else {
+    name = dom.studentNameInput.value.trim().replace(/\s+/g, " ");
+    if (!name) { dom.studentNameInput.focus(); showToast("Введите имя ученика", "warning"); return; }
+  }
   if (name.length > 200) { showToast("Имя должно быть короче 200 символов", "warning"); return; }
-  state.students.push({ id: generateId(), name: name, updatedAt: nextTimestamp(), actor: deviceId, deleted: false, classId: state.selectedClass || "class-main" });
-  dom.studentNameInput.value = ""; markChanged(["students/"+state.students[state.students.length-1].id]); saveLocal(); render(); scheduleSync(); dom.studentNameInput.focus(); showToast("Ученик добавлен", "success");
+  var student = { id: generateId(), name: name, updatedAt: nextTimestamp(), actor: deviceId, deleted: false, classId: state.selectedClass || "class-main" };
+  if (linkedAccountId) student.accountId = linkedAccountId;
+  state.students.push(student);
+  if (dom.studentNameInput) dom.studentNameInput.value = "";
+  markChanged(["students/"+student.id]); saveLocal(); render(); scheduleSync();
+  if (studentAddMode === "registered") populateStudentAccountSelect(); else dom.studentNameInput.focus();
+  showToast(linkedAccountId ? "Зарегистрированный ученик добавлен" : "Ученик добавлен", "success");
 }
 function renameStudent(id) {
   if (!effectivePermissions().canEditJournal) return;
@@ -622,6 +676,7 @@ function render() {
   renderHeader(days); renderBody(days); renderSummary(days); renderStudentCard(); renderProject();
   dom.searchResultsInfo.textContent = state.searchQuery.trim() ? "Найдено " + getFilteredStudents().length + " из " + getVisibleStudents().length : "Всего " + getVisibleStudents().length;
   dom.clearSearchButton.hidden = !state.searchQuery; dom.versionButtonText.textContent = state.settings.versionText; dom.versionButton.setAttribute("aria-label", state.settings.versionText + ". Открыть настройки по коду"); if (dom.journalEdition) dom.journalEdition.textContent = settingsVersionText(); renderNews(); renderMaintenance(); renderHomework(); renderOffline();
+  if (studentAddMode === "registered") populateStudentAccountSelect();
   if (!activeModal && focused && focused.dataset && focused.dataset.dateKey && !focused.isConnected) { var replacement = document.querySelector('.attendance-button[data-student-id="' + focused.dataset.studentId + '"][data-date-key="' + focused.dataset.dateKey + '"]'); if (replacement) replacement.focus(); }
 }
 function refreshDevPanel() {
@@ -669,6 +724,21 @@ function restoreData(data) {
   settingFields.forEach(function (field) { data.settings.fieldMeta[field] = { updatedAt: time, actor: deviceId }; }); data.settings.updatedAt = time;
   var previousTracked = trackedPayload; restoreProjectData(data, current, time); applyMergedToState(data); trackedPayload = previousTracked; markChanged(); saveLocal(true); render(); if (activeModal === dom.devPanelModal) refreshDevPanel(); scheduleSync();
 }
+// Full wipe: removes every student, all attendance marks/absences, homework and lessons
+// across ALL classes. Classes and subjects are kept so the journal stays usable.
+// A recovery backup is saved first — "Восстановить последнюю" undoes the wipe.
+function clearAllJournalData() {
+  var perms = effectivePermissions();
+  if (!perms.canEditJournal || !perms.canManageDevices) { showToast("Полная очистка доступна учителю или тех. администрации", "warning"); return; }
+  var liveStudents = state.students.filter(function (s) { return !s.deleted; }).length;
+  var liveLessons = (state.lessons || []).filter(function (l) { return !l.deleted; }).length;
+  var liveHw = (state.homework || []).filter(function (h) { return !h.deleted; }).length;
+  if (!liveStudents && !liveLessons && !liveHw && !Object.keys(state.attendance || {}).length) { showToast("Журнал уже пуст — очищать нечего", "info"); return; }
+  if (!window.confirm("Полная очистка: удалить ВСЕХ учеников (" + liveStudents + "), все отметки и пропуски, домашние задания (" + liveHw + ") и занятия (" + liveLessons + ") во всех классах?\nКлассы и предметы останутся. Перед удалением будет сохранена резервная копия.")) return;
+  executeFullClear();
+}
+// Deferred to the project layer so it can use the extended payload/queue APIs.
+function executeFullClear() { setTimeout(runFullClear, 0); }
 function restoreBackup() {
   if (!effectivePermissions().canManageDevices) { showToast("Восстановление копий доступно учителю или тех. администрации", "warning"); return; }
   try { var backups = storage && JSON.parse(storage.getItem(BACKUP_KEY) || "[]"); if (!backups || !backups.length) { showToast("Пока нет автоматических резервных копий", "warning"); return; }
@@ -678,6 +748,9 @@ function restoreBackup() {
 function wireCoreEvents() {
   dom.addStudentButton.addEventListener("click", addStudent);
   dom.studentNameInput.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); addStudent(); } });
+  var studentModeNewBtn = document.getElementById("studentModeNew"), studentModeRegBtn = document.getElementById("studentModeRegistered");
+  if (studentModeNewBtn) studentModeNewBtn.addEventListener("click", function () { setStudentAddMode("new"); });
+  if (studentModeRegBtn) studentModeRegBtn.addEventListener("click", function () { setStudentAddMode("registered"); });
   dom.monthPicker.addEventListener("change", function (e) { try { var d = parseMonth(e.target.value); state.selectedMonth = e.target.value; state.selectedDate = formatDateKey(d); render(); } catch (error) { e.target.value = state.selectedMonth; } });
   dom.previousMonthButton.addEventListener("click", function () { changePeriod(-1); }); dom.nextMonthButton.addEventListener("click", function () { changePeriod(1); }); dom.todayButton.addEventListener("click", goToToday);
   dom.searchInput.addEventListener("input", function (e) { state.searchQuery = e.target.value; render(); });
@@ -695,6 +768,7 @@ function wireCoreEvents() {
   dom.devResetMaintenanceMessageButton.addEventListener("click", function () { updateSettings({ maintenanceMessage: DEFAULT_MAINTENANCE_MSG }); refreshDevPanel(); });
   dom.devSaveNewsButton.addEventListener("click", function () { updateSettings({ news: dom.devNewsInput.value.trim().slice(0, 4000) }); try { if (storage) storage.removeItem(NEWS_DISMISS_KEY); } catch (e) {} renderNews(); showToast("Объявление сохранено", "success"); });
   dom.devClearNewsButton.addEventListener("click", function () { updateSettings({ news: "" }); refreshDevPanel(); });
+  if (dom.devClearAllButton) dom.devClearAllButton.addEventListener("click", clearAllJournalData);
   dom.newsCloseButton.addEventListener("click", function () { try { if (storage) storage.setItem(NEWS_DISMISS_KEY, state.settings.news.trim()); } catch (e) {} dom.newsBanner.classList.remove("visible"); });
   dom.exportBackupButton.addEventListener("click", exportBackup); dom.importBackupButton.addEventListener("click", function () { dom.importBackupInput.click(); }); dom.restoreBackupButton.addEventListener("click", restoreBackup); dom.printButton.addEventListener("click", function () { window.print(); });
   dom.importBackupInput.addEventListener("change", async function (e) {
@@ -1781,7 +1855,7 @@ function renderDeviceList() {
       option.title = DEVICE_ROLES[key].hint;
       roleSelect.appendChild(option);
     });
-    roleSelect.value = DEVICE_ROLE_KEYS.indexOf(entry.role) !== -1 ? entry.role : "teacher";
+    roleSelect.value = deviceRole(id); // reflects the effective role incl. "registered account → student" default
     roleSelect.setAttribute("aria-label", "Роль устройства: " + (entry.name || id.slice(0, 4)));
     if (id !== deviceId && !syncWritable()) roleSelect.disabled = true;
     roleSelect.title = id === deviceId ? "Ваша роль на этом устройстве" : "Назначить роль этому устройству (нужен токен для отправки)";
@@ -2196,3 +2270,27 @@ function wireAppUpdates(){
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+
+/* Full wipe implementation (project layer): marks every student, lesson and
+   homework record as deleted across ALL classes, resets all attendance and
+   lesson marks, saves a recovery backup first, and queues every changed
+   record for synchronization. Classes and subjects are preserved. */
+function runFullClear(){
+  try{
+    if(!effectivePermissions().canEditJournal||!effectivePermissions().canManageDevices){showToast("Полная очистка доступна учителю или тех. администрации","warning");return;}
+    var word=window.prompt("Это необратимое действие (отменить можно только восстановлением копии).\nДля подтверждения введите слово ОЧИСТИТЬ:");
+    if(word===null)return;
+    if(String(word).trim().toUpperCase()!=="ОЧИСТИТЬ"){showToast("Очистка отменена: код подтверждения не совпал","info");return;}
+    saveRecoveryBackup();
+    var time=nextTimestamp(),keys=[];
+    state.students.forEach(function(s){if(!s.deleted){s.deleted=true;s.updatedAt=nextTimestamp();s.actor=deviceId;keys.push("students/"+s.id);}});
+    Object.keys(state.attendance||{}).forEach(function(k){state.attendance[k]={status:STATUS_UNMARKED,updatedAt:nextTimestamp(),actor:deviceId};keys.push("attendance/"+k);});
+    (state.lessons||[]).forEach(function(l){if(!l.deleted){l.deleted=true;l.updatedAt=nextTimestamp();l.actor=deviceId;keys.push("lessons/"+l.id);}});
+    (state.homework||[]).forEach(function(h){if(!h.deleted){h.deleted=true;h.updatedAt=nextTimestamp();h.actor=deviceId;keys.push(homeworkListKey+"/"+h.id);}});
+    Object.keys(state.lessonMarks||{}).forEach(function(k){state.lessonMarks[k]={status:"unmarked",updatedAt:nextTimestamp(),actor:deviceId};keys.push("lessonMarks/"+k);});
+    var flat=flattenRecords(buildPayload());
+    keys.forEach(function(k){if(offline.queue[k])offline.queue[k].done=false;else if(flat[k])offline.queue[k]={op:generateId()+"-"+flat[k].updatedAt,time:flat[k].updatedAt,done:false};});
+    markChanged(keys);saveLocal(true);render();scheduleSync();
+    showToast("Журнал очищен: удалены все ученики, отметки, домашние задания и занятия. Восстановить: «Восстановить последнюю»","success");
+  }catch(e){console.error(e);showToast("Очистка не выполнена: "+e.message,"error");}
+}

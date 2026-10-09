@@ -1,0 +1,367 @@
+From 99ed5701306bf99d4391348d3b6f48e08956b426 Mon Sep 17 00:00:00 2001
+From: "qwen.ai[bot]" <qwenlm-intl@service.alibaba.com>
+Date: Fri, 9 Oct 2026 17:39:22 +0000
+Subject: [PATCH 1/4] Align device list header columns exactly with row grid
+
+---
+ styles.css | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/styles.css b/styles.css
+index 432d01d..b6d160c 100644
+--- a/styles.css
++++ b/styles.css
+@@ -2485,9 +2485,11 @@ input[type="date"]:focus { outline: none; border-color: var(--primary); box-shad
+ @media(max-width:560px){.sync-overview{align-items:stretch;flex-direction:column;padding:15px;gap:10px}.sync-overview button{width:100%}.app-update{align-items:stretch;flex-direction:column}}
+ @media screen and (prefers-color-scheme:dark){.sync-overview{background:rgba(23,46,60,.85);border-color:rgba(255,255,255,.15)}.sync-overview strong{color:#93e0c8}.sync-overview p{color:#c2d1da}.sync-notice{background:#20483f;color:#c8f4e6;border-color:#477968}}
+ @media(prefers-reduced-motion:reduce){.just-received{animation:none;outline:2px solid #148975}}
+-.device-list-head{display:none;grid-template-columns:minmax(120px,1.2fr) minmax(64px,.7fr) minmax(110px,1fr) minmax(104px,.9fr) 84px;gap:8px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#5c7280;margin-bottom:6px}
++/* Shared column template — header and rows use the identical grid so nothing can drift out of alignment. */
++.device-list-head,.device-row{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.7fr) minmax(0,1fr) minmax(0,1.1fr) 84px;gap:8px;box-sizing:border-box}
++.device-list-head{display:none;padding:0 10px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#5c7280;margin-bottom:6px}
+ .device-list{display:flex;flex-direction:column;gap:6px}
+-.device-row{display:grid;grid-template-columns:minmax(120px,1.2fr) minmax(64px,.7fr) minmax(110px,1fr) minmax(104px,.9fr) 84px;gap:8px;align-items:center;padding:8px 10px;border:1px solid var(--border,#d9e2ec);border-radius:12px;background:var(--surface-2,rgba(255,255,255,.6))}
++.device-row{align-items:center;padding:8px 10px;border:1px solid var(--border,#d9e2ec);border-radius:12px;background:var(--surface-2,rgba(255,255,255,.6))}
+ @media(min-width:641px){.device-list-head{display:grid}}
+ .device-name{font-size:13px;font-weight:600;color:#1f3a45;overflow-wrap:anywhere}
+ .device-id{font-size:11px;color:#71869a;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+-- 
+2.39.5
+
+
+From 47d304a27a6a3f0af2480ce1daab945900937e97 Mon Sep 17 00:00:00 2001
+From: "qwen.ai[bot]" <qwenlm-intl@service.alibaba.com>
+Date: Fri, 9 Oct 2026 17:47:17 +0000
+Subject: [PATCH 2/4] Teacher: choose new or registered user when adding a
+ student
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- Student entry now has a mode switcher: 'Новый ученик' (free-text input) and 'Зарегистрированный' (dropdown of local auth accounts)
+- Registered mode lists accounts from the auth gate registration store, excludes those already present in the journal, links student to accountId
+- Duplicate protection + hint with available account count; select refreshes on render
+- Styles for segmented switcher and select incl. mobile (<=700px) layout
+---
+ app.js     | 55 ++++++++++++++++++++++++++++++++++++++++++++++++++----
+ index.html | 17 ++++++++++++++++-
+ styles.css | 10 +++++++++-
+ 3 files changed, 76 insertions(+), 6 deletions(-)
+
+diff --git a/app.js b/app.js
+index 32634bf..c2ca38e 100644
+--- a/app.js
++++ b/app.js
+@@ -509,13 +509,56 @@ function updateSettings(patch) {
+ function getVisibleStudents() { return state.students.filter(function (s) { return !s.deleted && (s.classId || "class-main") === (state.selectedClass || "class-main"); }).sort(function (a, b) { return a.name.localeCompare(b.name, "ru") || a.id.localeCompare(b.id); }); }
+ function getStudentById(id) { return state.students.find(function (s) { return s.id === id; }) || null; }
+ function getFilteredStudents() { var q = state.searchQuery.trim().toLocaleLowerCase("ru"); return getVisibleStudents().filter(function (s) { return !q || s.name.toLocaleLowerCase("ru").includes(q); }); }
++var studentAddMode = "new"; // "new" | "registered"
++function setStudentAddMode(mode) {
++  studentAddMode = mode === "registered" ? "registered" : "new";
++  var btnNew = document.getElementById("studentModeNew"), btnReg = document.getElementById("studentModeRegistered");
++  var wrapNew = document.getElementById("studentAddNewWrap"), wrapReg = document.getElementById("studentAddRegisteredWrap");
++  if (btnNew) { btnNew.classList.toggle("is-active", studentAddMode === "new"); btnNew.setAttribute("aria-pressed", String(studentAddMode === "new")); }
++  if (btnReg) { btnReg.classList.toggle("is-active", studentAddMode === "registered"); btnReg.setAttribute("aria-pressed", String(studentAddMode === "registered")); }
++  if (wrapNew) wrapNew.hidden = studentAddMode !== "new";
++  if (wrapReg) wrapReg.hidden = studentAddMode !== "registered";
++  if (studentAddMode === "registered") populateStudentAccountSelect();
++  else if (dom.studentNameInput) dom.studentNameInput.focus();
++}
++function populateStudentAccountSelect() {
++  var sel = document.getElementById("studentAccountSelect"); if (!sel) return;
++  var accounts = loadAuthAccounts().slice().sort(function (a, b) { return String(a.fullName || "").localeCompare(String(b.fullName || ""), "ru"); });
++  var existingNames = {}; getVisibleStudents().concat(state.students.filter(function(s){return !s.deleted;})).forEach(function (s) { existingNames[authNormalizeName(s.name)] = true; });
++  var available = accounts.filter(function (a) { return !existingNames[authNormalizeName(a.fullName)]; });
++  sel.innerHTML = "";
++  if (!available.length) {
++    var opt = document.createElement("option"); opt.value = ""; opt.textContent = accounts.length ? "Все аккаунты уже в журнале" : "Нет зарегистрированных аккаунтов"; sel.appendChild(opt);
++  } else {
++    available.forEach(function (a) { var opt = document.createElement("option"); opt.value = a.id; opt.textContent = a.fullName; sel.appendChild(opt); });
++  }
++  var hint = document.getElementById("studentAccountHint");
++  if (hint) hint.textContent = accounts.length ? ("Всего аккаунтов на устройстве: " + accounts.length + ". Доступных для добавления: " + available.length + ".") : "Аккаунты создаются на экране входа/регистрации этого устройства.";
++}
+ function addStudent() {
+   if (!effectivePermissions().canEditJournal) { showToast("Роль «" + DEVICE_ROLES[deviceRole(deviceId)].label + "»: добавление учеников недоступно", "warning"); return; }
+-  var name = dom.studentNameInput.value.trim().replace(/\s+/g, " ");
+-  if (!name) { dom.studentNameInput.focus(); showToast("Введите имя ученика", "warning"); return; }
++  var name, linkedAccountId = null;
++  if (studentAddMode === "registered") {
++    var sel = document.getElementById("studentAccountSelect");
++    var accId = sel && sel.value;
++    if (!accId) { showToast("Сначала выберите зарегистрированный аккаунт", "warning"); populateStudentAccountSelect(); return; }
++    var account = loadAuthAccounts().find(function (a) { return a.id === accId; });
++    if (!account) { showToast("Аккаунт не найден — обновите список", "warning"); populateStudentAccountSelect(); return; }
++    name = String(account.fullName || "").trim().replace(/\s+/g, " ");
++    if (getVisibleStudents().some(function (s) { return authNormalizeName(s.name) === authNormalizeName(name); })) { showToast("Этот аккаунт уже добавлен в журнал", "warning"); populateStudentAccountSelect(); return; }
++    linkedAccountId = account.id;
++  } else {
++    name = dom.studentNameInput.value.trim().replace(/\s+/g, " ");
++    if (!name) { dom.studentNameInput.focus(); showToast("Введите имя ученика", "warning"); return; }
++  }
+   if (name.length > 200) { showToast("Имя должно быть короче 200 символов", "warning"); return; }
+-  state.students.push({ id: generateId(), name: name, updatedAt: nextTimestamp(), actor: deviceId, deleted: false, classId: state.selectedClass || "class-main" });
+-  dom.studentNameInput.value = ""; markChanged(["students/"+state.students[state.students.length-1].id]); saveLocal(); render(); scheduleSync(); dom.studentNameInput.focus(); showToast("Ученик добавлен", "success");
++  var student = { id: generateId(), name: name, updatedAt: nextTimestamp(), actor: deviceId, deleted: false, classId: state.selectedClass || "class-main" };
++  if (linkedAccountId) student.accountId = linkedAccountId;
++  state.students.push(student);
++  if (dom.studentNameInput) dom.studentNameInput.value = "";
++  markChanged(["students/"+student.id]); saveLocal(); render(); scheduleSync();
++  if (studentAddMode === "registered") populateStudentAccountSelect(); else dom.studentNameInput.focus();
++  showToast(linkedAccountId ? "Зарегистрированный ученик добавлен" : "Ученик добавлен", "success");
+ }
+ function renameStudent(id) {
+   if (!effectivePermissions().canEditJournal) return;
+@@ -622,6 +665,7 @@ function render() {
+   renderHeader(days); renderBody(days); renderSummary(days); renderStudentCard(); renderProject();
+   dom.searchResultsInfo.textContent = state.searchQuery.trim() ? "Найдено " + getFilteredStudents().length + " из " + getVisibleStudents().length : "Всего " + getVisibleStudents().length;
+   dom.clearSearchButton.hidden = !state.searchQuery; dom.versionButtonText.textContent = state.settings.versionText; dom.versionButton.setAttribute("aria-label", state.settings.versionText + ". Открыть настройки по коду"); if (dom.journalEdition) dom.journalEdition.textContent = settingsVersionText(); renderNews(); renderMaintenance(); renderHomework(); renderOffline();
++  if (studentAddMode === "registered") populateStudentAccountSelect();
+   if (!activeModal && focused && focused.dataset && focused.dataset.dateKey && !focused.isConnected) { var replacement = document.querySelector('.attendance-button[data-student-id="' + focused.dataset.studentId + '"][data-date-key="' + focused.dataset.dateKey + '"]'); if (replacement) replacement.focus(); }
+ }
+ function refreshDevPanel() {
+@@ -678,6 +722,9 @@ function restoreBackup() {
+ function wireCoreEvents() {
+   dom.addStudentButton.addEventListener("click", addStudent);
+   dom.studentNameInput.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); addStudent(); } });
++  var studentModeNewBtn = document.getElementById("studentModeNew"), studentModeRegBtn = document.getElementById("studentModeRegistered");
++  if (studentModeNewBtn) studentModeNewBtn.addEventListener("click", function () { setStudentAddMode("new"); });
++  if (studentModeRegBtn) studentModeRegBtn.addEventListener("click", function () { setStudentAddMode("registered"); });
+   dom.monthPicker.addEventListener("change", function (e) { try { var d = parseMonth(e.target.value); state.selectedMonth = e.target.value; state.selectedDate = formatDateKey(d); render(); } catch (error) { e.target.value = state.selectedMonth; } });
+   dom.previousMonthButton.addEventListener("click", function () { changePeriod(-1); }); dom.nextMonthButton.addEventListener("click", function () { changePeriod(1); }); dom.todayButton.addEventListener("click", goToToday);
+   dom.searchInput.addEventListener("input", function (e) { state.searchQuery = e.target.value; render(); });
+diff --git a/index.html b/index.html
+index e2758af..c40ccb9 100644
+--- a/index.html
++++ b/index.html
+@@ -40,7 +40,22 @@
+     <div class="panel-heading"><div><h2>Журнал класса</h2><p>Нажмите на имя, чтобы открыть карточку ученика.</p></div><div id="viewSwitcher" class="view-switcher" role="group" aria-label="Вид журнала"><button type="button" data-view="day" aria-pressed="false">День</button><button type="button" data-view="week" aria-pressed="false">Неделя</button><button type="button" data-view="month" aria-pressed="true">Месяц</button></div></div>
+     <div class="class-toolbar"><label for="classPicker">Класс</label><select id="classPicker"></select><button id="addClassButton" class="secondary" type="button">+ Класс</button><button id="toggleStudentEntryButton" class="secondary mobile-add-student" type="button" aria-expanded="false" aria-controls="studentEntry">+ Ученик</button></div>
+     <div class="controls">
+-      <div class="student-entry" id="studentEntry"><label class="visually-hidden" for="studentName">Имя и фамилия ученика</label><input id="studentName" type="text" placeholder="Имя и фамилия ученика" autocomplete="off" maxlength="200"><button id="addStudentButton" type="button">Добавить ученика</button></div>
++      <div class="student-entry" id="studentEntry">
++        <div class="student-add-mode" role="radiogroup" aria-label="Способ добавления ученика">
++          <button id="studentModeNew" type="button" class="student-mode-btn is-active" aria-pressed="true">Новый ученик</button>
++          <button id="studentModeRegistered" type="button" class="student-mode-btn" aria-pressed="false">Зарегистрированный</button>
++        </div>
++        <div id="studentAddNewWrap">
++          <label class="visually-hidden" for="studentName">Имя и фамилия ученика</label>
++          <input id="studentName" type="text" placeholder="Имя и фамилия ученика" autocomplete="off" maxlength="200">
++        </div>
++        <div id="studentAddRegisteredWrap" hidden>
++          <label class="visually-hidden" for="studentAccountSelect">Выберите зарегистрированный аккаунт</label>
++          <select id="studentAccountSelect"></select>
++          <div class="student-account-hint" id="studentAccountHint">Аккаунты создаются на экране входа/регистрации этого устройства.</div>
++        </div>
++        <button id="addStudentButton" type="button">Добавить ученика</button>
++      </div>
+       <div class="month-navigation"><button id="previousMonthButton" class="secondary" type="button" aria-label="Предыдущий период">←</button><label class="visually-hidden" for="monthPicker">Месяц журнала</label><input id="monthPicker" type="month" min="1000-01" max="9999-12"><label class="visually-hidden" for="datePicker">Дата журнала</label><input id="datePicker" type="date" min="1000-01-01" max="9999-12-31" hidden><button id="nextMonthButton" class="secondary" type="button" aria-label="Следующий период">→</button><button id="todayButton" class="secondary" type="button">Сегодня</button></div>
+     </div>
+     <div class="search-block"><label for="searchInput">Найти ученика</label><input id="searchInput" type="search" placeholder="Найти ученика" autocomplete="off"><button id="clearSearchButton" class="secondary" type="button" hidden>Сбросить</button><span id="searchResultsInfo" class="search-results-info" role="status"></span></div>
+diff --git a/styles.css b/styles.css
+index b6d160c..667d399 100644
+--- a/styles.css
++++ b/styles.css
+@@ -1768,9 +1768,17 @@ h1 { font-weight: 720; letter-spacing: -.035em; line-height: 1.16; margin-bottom
+ .panel-heading p { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
+ .panel-heading .eyebrow { margin-bottom: 5px; }
+ .controls { gap: 18px; align-items: center; justify-content: space-between; }
+-.student-entry { display: flex; gap: 9px; flex: 1 1 330px; max-width: 510px; min-width: 0; }
++.student-entry { display: flex; gap: 9px; flex: 1 1 330px; max-width: 560px; min-width: 0; align-items: stretch; flex-wrap: wrap; }
+ .student-entry input { flex: 1 1 190px; min-width: 0; }
+ .student-entry button { flex: 0 0 auto; }
++.student-add-mode { display: flex; flex: 0 0 auto; border: 1px solid var(--border, #d4d9e2); border-radius: 10px; overflow: hidden; }
++.student-mode-btn { border: 0; background: transparent; padding: 0 12px; font-size: 12.5px; cursor: pointer; color: inherit; white-space: nowrap; }
++.student-mode-btn.is-active { background: var(--accent, #2f6fed); color: #fff; }
++#studentAddNewWrap, #studentAddRegisteredWrap { display: flex; flex: 1 1 190px; min-width: 0; gap: 8px; align-items: center; }
++#studentAddNewWrap[hidden], #studentAddRegisteredWrap[hidden] { display: none; }
++#studentAccountSelect { flex: 1 1 160px; min-width: 0; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border, #d4d9e2); background: var(--surface, #fff); color: inherit; font-size: 14px; }
++.student-account-hint { font-size: 11.5px; opacity: .75; flex: 1 1 100%; order: 3; }
++@media (max-width: 700px) { .student-add-mode { width: 100%; } .student-mode-btn { flex: 1 1 50%; text-align: center; padding: 8px 6px; } #studentAddNewWrap, #studentAddRegisteredWrap { flex-basis: 100%; } }
+ .month-navigation { display: flex; align-items: center; gap: 6px; flex: 0 1 auto; flex-wrap: wrap; }
+ .month-navigation input[type='month'] { width: 166px; min-width: 150px; background: var(--surface-1); }
+ .month-navigation button { padding: 0 12px; }
+-- 
+2.39.5
+
+
+From 7cbf6def3ddd4a6a71cc40a4c59ba8e9fedf2ee4 Mon Sep 17 00:00:00 2001
+From: "qwen.ai[bot]" <qwenlm-intl@service.alibaba.com>
+Date: Fri, 9 Oct 2026 17:53:43 +0000
+Subject: [PATCH 3/4] Registered accounts default to student role; explicit
+ assignment overrides
+
+---
+ app.js              | 21 +++++++++---
+ test_reg_student.py | 84 +++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 100 insertions(+), 5 deletions(-)
+ create mode 100644 test_reg_student.py
+
+diff --git a/app.js b/app.js
+index c2ca38e..7932980 100644
+--- a/app.js
++++ b/app.js
+@@ -137,7 +137,8 @@ function cleanDeviceMeta(meta) {
+     // not a base role — it stacks on top of any role. See DEVICE_ROLES below.
+     var role = DEVICE_ROLE_KEYS.indexOf(entry.role) !== -1 ? entry.role : "teacher";
+     var techAdmin = entry.techAdmin === true || entry.role === "admin"; // migrate legacy "admin" role → add-on flag
+-    result[id] = { name: name, role: role, techAdmin: techAdmin, seenAt: Number.isFinite(seenAt) && seenAt > 0 ? seenAt : 0, updatedAt: Number.isFinite(updatedAt) && updatedAt > 0 ? updatedAt : 0 };
++    var roleExplicit = entry.roleExplicit === true;
++    result[id] = { name: name, role: role, roleExplicit: roleExplicit, techAdmin: techAdmin, seenAt: Number.isFinite(seenAt) && seenAt > 0 ? seenAt : 0, updatedAt: Number.isFinite(updatedAt) && updatedAt > 0 ? updatedAt : 0 };
+   });
+   return result;
+ }
+@@ -148,7 +149,7 @@ function mergeDeviceMeta(local, remote) {
+     if (!existing) { result[id] = incoming; return; }
+     var latest = (incoming.updatedAt || 0) >= (existing.updatedAt || 0) ? incoming : existing;
+     var other = latest === incoming ? existing : incoming;
+-    result[id] = { name: (latest.name || other.name || ""), role: DEVICE_ROLE_KEYS.indexOf(latest.role) !== -1 ? latest.role : (DEVICE_ROLE_KEYS.indexOf(other.role) !== -1 ? other.role : "teacher"), techAdmin: Boolean(latest.techAdmin || other.techAdmin), seenAt: Math.max(existing.seenAt || 0, incoming.seenAt || 0), updatedAt: Math.max(existing.updatedAt || 0, incoming.updatedAt || 0) };
++    result[id] = { name: (latest.name || other.name || ""), role: DEVICE_ROLE_KEYS.indexOf(latest.role) !== -1 ? latest.role : (DEVICE_ROLE_KEYS.indexOf(other.role) !== -1 ? other.role : "teacher"), roleExplicit: Boolean((latest === incoming ? incoming.roleExplicit : existing.roleExplicit) || (latest === existing ? existing.roleExplicit : incoming.roleExplicit)), techAdmin: Boolean(latest.techAdmin || other.techAdmin), seenAt: Math.max(existing.seenAt || 0, incoming.seenAt || 0), updatedAt: Math.max(existing.updatedAt || 0, incoming.updatedAt || 0) };
+   });
+   return result;
+ }
+@@ -166,6 +167,14 @@ var DEVICE_ROLES = {
+ };
+ var DEVICE_ROLE_KEYS = Object.keys(DEVICE_ROLES);
+ function deviceRole(id) {
++  // Accounts created via the registration screen are students by default:
++  // if this device is logged in with such an account and no role was assigned
++  // explicitly yet, treat it as «Ученик».
++  var session = currentAuthSession();
++  if (id === deviceId && session && session.accountId && !session.roleExplicit) {
++    var entry0 = (state.deviceMeta || {})[id];
++    if (!entry0 || !entry0.roleExplicit) return "student";
++  }
+   var entry = (state.deviceMeta || {})[id];
+   return entry && DEVICE_ROLE_KEYS.indexOf(entry.role) !== -1 ? entry.role : "teacher";
+ }
+@@ -180,6 +189,7 @@ function setDeviceTechAdmin(id, enabled) {
+   if (Boolean(entry.techAdmin) === Boolean(enabled)) return false;
+   if (id !== deviceId && !(effectivePermissions().canManageDevices && syncWritable())) { showToast("Выдать статус «Тех. администрация» другому устройству может учитель/тех. админ с токеном", "warning"); return false; }
+   entry.techAdmin = Boolean(enabled);
++  if (id === deviceId) { var sessT = currentAuthSession(); if (sessT) { sessT.roleExplicit = true; saveAuthSession(sessT); } } // tech-admin add-on also confirms the role explicitly
+   entry.updatedAt = nextTimestamp();
+   saveLocal(); scheduleSync(); renderDeviceList(); applyRoleRestrictions();
+   showToast((enabled ? "Статус «Тех. администрация» выдан устройству " : "Статус «Тех. администрация» снят с устройства ") + (entry.name || id.slice(0, 4)), enabled ? "success" : "info");
+@@ -191,6 +201,7 @@ function setDeviceRole(id, role) {
+   var meta = state.deviceMeta || (state.deviceMeta = {});
+   var entry = meta[id] || (meta[id] = { seenAt: 0 });
+   entry.role = role;
++  entry.roleExplicit = true; // manual assignment overrides the "registered account → student" default
+   entry.updatedAt = nextTimestamp();
+   entry.seenAt = Math.max(entry.seenAt || 0, id === deviceId ? Date.now() : 0);
+   saveLocal(); scheduleSync(); renderDeviceList(); applyRoleRestrictions();
+@@ -426,8 +437,8 @@ async function handleAuthRegister() {
+     saveAuthAccounts(accounts);
+     saveAuthSession({ accountId: accounts[accounts.length - 1].id, fullName: fullName, method: "register", at: Date.now() });
+     d.authRegisterForm.reset();
+-    closeAuthGate(); render();
+-    showToast("Аккаунт создан. Добро пожаловать, " + first + "!", "success");
++    closeAuthGate(); render(); applyRoleRestrictions(); renderDeviceList();
++    showToast("Аккаунт создан. Добро пожаловать, " + first + "! Роль по умолчанию — «Ученик».", "success");
+   } catch (error) {
+     d.authRegisterError.textContent = error.message || "Не удалось создать аккаунт.";
+   } finally {
+@@ -1828,7 +1839,7 @@ function renderDeviceList() {
+       option.title = DEVICE_ROLES[key].hint;
+       roleSelect.appendChild(option);
+     });
+-    roleSelect.value = DEVICE_ROLE_KEYS.indexOf(entry.role) !== -1 ? entry.role : "teacher";
++    roleSelect.value = deviceRole(id); // reflects the effective role incl. "registered account → student" default
+     roleSelect.setAttribute("aria-label", "Роль устройства: " + (entry.name || id.slice(0, 4)));
+     if (id !== deviceId && !syncWritable()) roleSelect.disabled = true;
+     roleSelect.title = id === deviceId ? "Ваша роль на этом устройстве" : "Назначить роль этому устройству (нужен токен для отправки)";
+diff --git a/test_reg_student.py b/test_reg_student.py
+new file mode 100644
+index 0000000..31c63f4
+--- /dev/null
++++ b/test_reg_student.py
+@@ -0,0 +1,84 @@
++import json, time
++from playwright.sync_api import sync_playwright
++
++URL = "file:///workspace/index.html"
++
++with sync_playwright() as p:
++    browser = p.chromium.launch()
++    page = browser.new_page(viewport={"width": 1280, "height": 900})
++    errors = []
++    page.on("pageerror", lambda e: errors.append(str(e)))
++    page.goto(URL)
++    page.wait_for_timeout(500)
++
++    # 1. Auth gate must be visible on first open
++    assert page.is_visible("#authGate"), "auth gate not shown"
++
++    # 2. Register a new account
++    page.fill("#authRegFirst", "Иван")
++    page.fill("#authRegLast", "Петров")
++    page.fill("#authRegPass1", "secret123")
++    page.fill("#authRegPass2", "secret123")
++    page.click("#authRegisterSubmit")
++    page.wait_for_timeout(1500)
++
++    # Gate closed, session saved
++    assert not page.is_visible("#authGate"), "gate still open after register"
++    sess = page.evaluate("JSON.parse(localStorage.getItem('attendance_auth_session')||'null')")
++    assert sess and sess.get("accountId"), f"session missing accountId: {sess}"
++
++    # 3. Role must default to student
++    role = page.evaluate("deviceRole(deviceId)")
++    assert role == "student", f"expected student, got {role}"
++    banner = page.evaluate("document.getElementById('roleBanner').textContent")
++    assert "Ученик" in banner, f"banner wrong: {banner}"
++    ro = page.evaluate("document.body.classList.contains('role-readonly')")
++    assert ro, "body should be read-only for student"
++
++    # addStudent button disabled
++    disabled = page.evaluate("document.getElementById('addStudentButton').disabled")
++    assert disabled, "addStudentButton should be disabled for student"
++
++    # 4. Device list shows Ученик selected (renderDeviceList renders regardless of modal)
++    sel_val = page.evaluate("document.querySelector('.device-role').value")
++    assert sel_val == "student", f"select shows {sel_val}"
++
++    # 5. Teacher explicitly assigns teacher role -> overrides default (own row stays editable even in student mode)
++    page.evaluate("state.devUnlocked = true; applyRoleRestrictions(); renderDeviceList();")
++    enabled = page.evaluate("(function(){var s=document.querySelector('.device-role');return s.disabled})()")
++    assert not enabled, "own device role select must stay editable for the current device"
++    page.evaluate("setDeviceRole(deviceId, 'teacher')")
++    page.wait_for_timeout(400)
++    role2 = page.evaluate("deviceRole(deviceId)")
++    assert role2 == "teacher", f"after explicit assign expected teacher, got {role2}"
++    readonly2 = page.evaluate("document.body.classList.contains('role-readonly')")
++    assert not readonly2, "should be editable after teacher role"
++
++    # 6. Reload: explicit role persists
++    page.reload(); page.wait_for_timeout(600)
++    role3 = page.evaluate("deviceRole(deviceId)")
++    assert role3 == "teacher", f"after reload expected teacher persisted, got {role3}"
++    assert not page.is_visible("#authGate"), "gate should stay closed after reload (session exists)"
++
++    # 7. Logout + login with existing account -> student again (no explicit flag on new session/meta? meta kept explicit...)
++    # Explicit assignment lives in deviceMeta which persists per device; logging out/in keeps it. Verify behavior:
++    page.evaluate("clearAuthSession()")
++    page.evaluate("openAuthGate('login')")
++    page.wait_for_timeout(200)
++    page.fill("#authLoginName", "Иван Петров")
++    page.fill("#authLoginPass", "secret123")
++    page.click("#authLoginSubmit")
++    page.wait_for_timeout(1200)
++    # password accepted -> 2FA step
++    err = page.evaluate("document.getElementById('authLoginError').textContent")
++    assert "Пароль принят" in err, f"unexpected login state: {err}"
++
++    print(json.dumps({
++        "register_role_student": True,
++        "explicit_override_ok": role2 == "teacher",
++        "persist_after_reload": role3 == "teacher",
++        "errors": errors,
++    }, ensure_ascii=False))
++    browser.close()
++
++print("ALL OK")
+-- 
+2.39.5
+
