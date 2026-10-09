@@ -122,11 +122,56 @@
     <div class="dev-section"><label for="devMaintenanceMessageInput">Экран обслуживания</label><p class="help-text">Информационное сообщение на остальных устройствах. Управление настройками остаётся доступным.</p><textarea id="devMaintenanceMessageInput" maxlength="2000"></textarea><div class="row-actions"><button id="devSaveMaintenanceMessageButton" class="secondary" type="button">Сохранить сообщение</button><button id="devResetMaintenanceMessageButton" class="secondary" type="button">По умолчанию</button><button id="devToggleMaintenanceButton" class="secondary" type="button">Включить экран обслуживания</button></div></div>
     <div class="dev-section"><label>Устройства синхронизации</label><p class="help-text">Список устройств, которые записывали журнал в этот Gist. Имя и роль можно задать вручную — они сохранятся в облаке для всех подключённых устройств.</p><div class="device-list-head"><span>Устройство</span><span>Активность</span><span>Имя устройства</span><span>Роль</span><span>Тех. адм.</span></div><div id="syncDeviceList" class="device-list"><p class="help-text">Подключите Gist в разделе «Синхронизация», чтобы увидеть список устройств.</p></div><div class="row-actions"><button id="refreshDeviceListButton" class="secondary" type="button">Обновить список</button></div></div>
     <div class="dev-section"><label>Резервные копии</label><p class="help-text">Копии содержат учеников, отметки и настройки. Перед заменой данных сохраняются три последние версии.</p><div class="row-actions"><button id="importBackupButton" class="secondary" type="button">Загрузить копию</button><button id="restoreBackupButton" class="secondary" type="button">Восстановить последнюю</button><input id="importBackupInput" type="file" accept="application/json,.json" hidden></div></div>
+    <div class="dev-section"><label>Учётная запись этого устройства</label><p class="help-text" id="authAccountInfo"></p><div class="row-actions"><button id="authLogoutButton" class="secondary" type="button">Выйти из аккаунта</button></div></div>
     <div class="modal-actions"><button id="devExitButton" class="danger" type="button">Выйти из настроек</button><button id="devCloseButton" class="secondary" type="button">Свернуть</button></div>
   </div>
 </div>
 
 <div id="maintenanceOverlay" class="maintenance-overlay" role="dialog" aria-modal="true" aria-labelledby="maintenanceTitle"><div class="maintenance-content"><div class="maintenance-icon" aria-hidden="true">◷</div><h2 id="maintenanceTitle">Журнал на обслуживании</h2><p id="maintenanceMessageText"></p><button id="maintenanceDevAccessButton" class="secondary" type="button">Открыть настройки</button></div></div>
+
+<div id="authGate" class="auth-gate" role="dialog" aria-modal="true" aria-labelledby="authTitle" hidden>
+  <div class="auth-card">
+    <p class="eyebrow">Учебный журнал</p>
+    <h3 id="authTitle">Добро пожаловать</h3>
+    <p class="auth-subtitle" id="authSubtitle">Зарегистрируйтесь или войдите, чтобы продолжить.</p>
+    <div class="auth-tabs" role="tablist" aria-label="Регистрация или вход">
+      <button type="button" class="auth-tab is-active" id="authTabRegister" role="tab" aria-selected="true" aria-controls="authRegisterForm">Регистрация</button>
+      <button type="button" class="auth-tab" id="authTabLogin" role="tab" aria-selected="false" aria-controls="authLoginForm">Вход</button>
+    </div>
+    <form id="authRegisterForm" class="auth-form" autocomplete="off">
+      <label for="authRegFirst">Имя<input id="authRegFirst" type="text" maxlength="60" required placeholder="Имя"></label>
+      <label for="authRegLast">Фамилия<input id="authRegLast" type="text" maxlength="60" required placeholder="Фамилия"></label>
+      <label for="authRegPass1">Пароль<input id="authRegPass1" type="password" minlength="6" maxlength="128" required placeholder="Минимум 6 символов" autocomplete="new-password"></label>
+      <label for="authRegPass2">Повторите пароль<input id="authRegPass2" type="password" minlength="6" maxlength="128" required placeholder="Ещё раз тот же пароль" autocomplete="new-password"></label>
+      <p id="authRegisterError" class="password-error" role="alert"></p>
+      <div class="modal-actions"><button type="submit" id="authRegisterSubmit">Зарегистрироваться</button></div>
+    </form>
+    <form id="authLoginForm" class="auth-form" autocomplete="off" hidden>
+      <label for="authLoginName">Имя и фамилия<input id="authLoginName" type="text" maxlength="140" required placeholder="Иван Иванов" autocomplete="username"></label>
+      <label for="authLoginPass">Пароль<input id="authLoginPass" type="password" maxlength="128" required placeholder="••••••" autocomplete="current-password"></label>
+      <fieldset class="auth-2fa">
+        <legend>Подтверждение личности (2FA)</legend>
+        <div class="auth-2fa-methods" role="radiogroup" aria-label="Способ подтверждения">
+          <label class="auth-2fa-option"><input type="radio" name="auth2faMethod" value="code" checked><span>Код из SMS на телефон</span></label>
+          <label class="auth-2fa-option"><input type="radio" name="auth2faMethod" value="secret"><span>Секретное слово (пароль)</span></label>
+        </div>
+        <div class="auth-2fa-step" data-method="code">
+          <label for="authPhone">Телефон для подтверждения<input id="authPhone" type="tel" inputmode="tel" maxlength="30" placeholder="+7 900 000-00-00"></label>
+          <div class="auth-sms-row" id="authSmsRow" hidden>
+            <label for="authSmsCode">Введите код из сообщения<input id="authSmsCode" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="6 цифр" autocomplete="one-time-code"></label>
+            <p class="auth-demo-hint" id="authSmsHint" role="status"></p>
+          </div>
+        </div>
+        <div class="auth-2fa-step" data-method="secret" hidden>
+          <label for="authSecretWord">Секретное слово<input id="authSecretWord" type="password" maxlength="128" placeholder="Кодовое слово" autocomplete="off"></label>
+        </div>
+      </fieldset>
+      <p id="authLoginError" class="password-error" role="alert"></p>
+      <div class="modal-actions"><button type="submit" id="authLoginSubmit">Войти</button></div>
+    </form>
+    <p class="auth-footnote" id="authFootnote"></p>
+  </div>
+</div>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
 <div id="reportsModal" class="modal-backdrop"><div class="modal project-modal report-modal" role="dialog" aria-modal="true" aria-labelledby="reportsTitle"><div class="project-modal-head"><div><p class="eyebrow">Итоги посещаемости</p><h3 id="reportsTitle">Отчёты</h3></div><button id="reportsClose" class="secondary icon-button" type="button" aria-label="Закрыть отчёты">×</button></div><div class="project-form report-filters"><label>Учебный год с сентября<input id="reportYear" type="number" min="1000" max="9998"></label><label>Период<select id="reportQuarter"><option value="1">I четверть · сентябрь–октябрь</option><option value="2">II четверть · ноябрь–декабрь</option><option value="3">III четверть · январь–март</option><option value="4">IV четверть · апрель–май</option><option value="custom">Свой период</option></select></label><label>С даты<input id="reportStart" type="date"></label><label>По дату включительно<input id="reportEnd" type="date"></label><label>Класс<select id="reportClass"></select></label><label>Предмет<select id="reportSubject"></select></label><label>Ученик<select id="reportStudent"></select></label><label>Показать итоги<select id="reportGroup"><option value="students">По ученикам</option><option value="classes">По классам</option><option value="subjects">По предметам</option></select></label></div><p class="help-text">Границы четверти примерные — измените даты под календарь школы. Процент = (присутствия + опоздания) / все заполненные отметки проведённых занятий. Будущие, запланированные, отменённые занятия и пустые отметки исключены.</p><div id="reportSummary" class="report-summary" role="status"></div><div class="report-table-wrap"><table class="report-table"><thead><tr><th>Имя / название</th><th>Был</th><th>Опоздал</th><th>Пропустил</th><th>Отмечено</th><th>Посещаемость</th></tr></thead><tbody id="reportRows"></tbody></table></div><p id="reportNote" class="help-text"></p><div class="modal-actions"><button id="reportExcel" type="button">Скачать Excel</button><button id="reportPDF" class="secondary" type="button">Скачать PDF</button></div></div></div>
