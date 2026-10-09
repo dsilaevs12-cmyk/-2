@@ -283,6 +283,19 @@ function mergeData(local, remote) { return { version: 5, students: mergeStudents
 function buildPayload() { return copy({ version: 5, students: state.students, attendance: state.attendance, settings: state.settings }); }
 function applyMergedToState(data) { state.students = copy(data.students); state.attendance = copy(data.attendance); state.settings = cloneSettings(data.settings); if (Array.isArray(data.homework)) state.homework = data.homework.map(function (v) { return Object.assign({}, v); }); }
 function markChanged() { state.revision++; syncRuntime.hasPendingChanges = true; }
+// Coalesce rapid localStorage writes (e.g. tapping several cells quickly).
+// The leading-edge timer fires within 150ms so data is never at risk for long,
+// and beforeunload flushes anything pending synchronously.
+var saveLocalTimer = null;
+function scheduleSaveLocal() {
+  if (saveLocalTimer) return;
+  saveLocalTimer = setTimeout(function () { saveLocalTimer = null; saveLocal(); }, 150);
+}
+function flushSaveLocal() { if (saveLocalTimer) { clearTimeout(saveLocalTimer); saveLocalTimer = null; saveLocal(); } }
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState === "hidden") flushSaveLocal(); });
+  window.addEventListener("pagehide", flushSaveLocal);
+}
 function updateLocalStatus(text, failed) { if (dom.localSaveStatus) { dom.localSaveStatus.textContent = text; dom.localSaveStatus.classList.toggle("save-error", !!failed); } }
 var lastLocalRaw;
 function saveLocal(replace) {
@@ -515,7 +528,7 @@ function updateAuth2faStep() {
 
 function updateSettings(patch) {
   var time = nextTimestamp(); settingFields.forEach(function (field) { if (Object.prototype.hasOwnProperty.call(patch, field)) { state.settings[field] = patch[field]; state.settings.fieldMeta[field] = { updatedAt: time, actor: deviceId }; } });
-  state.settings.updatedAt = time; markChanged(Object.keys(patch).map(function(f){return "settings/"+f;})); saveLocal(); render(); scheduleSync();
+  state.settings.updatedAt = time; markChanged(Object.keys(patch).map(function(f){return "settings/"+f;})); scheduleSaveLocal(); render(); scheduleSync();
 }
 function getVisibleStudents() { return state.students.filter(function (s) { return !s.deleted && (s.classId || "class-main") === (state.selectedClass || "class-main"); }).sort(function (a, b) { return a.name.localeCompare(b.name, "ru") || a.id.localeCompare(b.id); }); }
 function getStudentById(id) { return state.students.find(function (s) { return s.id === id; }) || null; }
@@ -567,7 +580,7 @@ function addStudent() {
   if (linkedAccountId) student.accountId = linkedAccountId;
   state.students.push(student);
   if (dom.studentNameInput) dom.studentNameInput.value = "";
-  markChanged(["students/"+student.id]); saveLocal(); render(); scheduleSync();
+  markChanged(["students/"+student.id]); scheduleSaveLocal(); render(); scheduleSync();
   if (studentAddMode === "registered") populateStudentAccountSelect(); else dom.studentNameInput.focus();
   showToast(linkedAccountId ? "Зарегистрированный ученик добавлен" : "Ученик добавлен", "success");
 }
@@ -577,7 +590,7 @@ function renameStudent(id) {
   var name = window.prompt("Имя ученика", student.name); if (name === null) return; name = name.trim().replace(/\s+/g, " ");
   if (!name || name.length > 200) { showToast("Введите имя длиной до 200 символов", "warning"); return; }
   if (name === student.name) return; student.name = name; student.updatedAt = nextTimestamp(); student.actor = deviceId;
-  markChanged(["students/"+id]); saveLocal(); render(); scheduleSync();
+  markChanged(["students/"+id]); scheduleSaveLocal(); render(); scheduleSync();
 }
 function removeStudent(id) {
   if (!effectivePermissions().canEditJournal) return;
@@ -585,7 +598,7 @@ function removeStudent(id) {
   if (!window.confirm("Удалить ученика «" + student.name + "» из журнала? Перед удалением будет сохранена резервная копия.")) return;
   try { saveRecoveryBackup(); } catch (e) { showToast("Удаление отменено: " + e.message, "error"); return; }
   student.deleted = true; student.updatedAt = nextTimestamp(); student.actor = deviceId;
-  markChanged(["students/"+id]); saveLocal(); render(); scheduleSync(); showToast("Ученик удалён. Доступно восстановление из копии.", "success");
+  markChanged(["students/"+id]); scheduleSaveLocal(); render(); scheduleSync(); showToast("Ученик удалён. Доступно восстановление из копии.", "success");
 }
 function modalFocusables() { return activeModal ? Array.from(activeModal.querySelectorAll("button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [href], [tabindex='0']")).filter(function (el) { return el.getClientRects().length; }) : []; }
 function updateInert() { if (dom.journalApp) dom.journalApp.inert = !!activeModal || shouldShowMaintenance(); if (dom.maintenanceOverlay) dom.maintenanceOverlay.inert = !!activeModal; }
@@ -625,7 +638,7 @@ function setAttendanceStatus(status) {
   var student = getStudentById(attendanceModalState.studentId); if (!student || student.deleted) { closeAttendanceModal(); return; }
   var key = student.id + "_" + attendanceModalState.dateKey;
   state.attendance[key] = { status: status, updatedAt: nextTimestamp(), actor: deviceId };
-  markChanged(["attendance/"+key]); saveLocal(); renderNow(); scheduleSync(); closeAttendanceModal();
+  markChanged(["attendance/"+key]); scheduleSaveLocal(); renderNow(); scheduleSync(); closeAttendanceModal();
 }
 function changeMonth(offset) { var d = parseMonth(state.selectedMonth); d.setMonth(d.getMonth() + offset); if (d.getFullYear() < 1000 || d.getFullYear() > 9999) return; state.selectedMonth = getMonthString(d); state.selectedDate = formatDateKey(d); render(); }
 function element(tag, className, text) { var el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; }
@@ -634,26 +647,80 @@ function renderHeader(days) {
   days.forEach(function (day) { var th = element("th", (isWeekend(day) ? "weekend " : "") + (isToday(day) ? "today-column" : "")); th.scope = "col"; th.dataset.dateKey = formatDateKey(day); th.appendChild(element("span", "date-number", day.getDate())); th.appendChild(element("span", "weekday", weekdayNames[day.getDay()])); th.setAttribute("aria-label", day.toLocaleDateString("ru-RU")); row.appendChild(th); });
   var actions = element("th", "actions-column", "Действия"); actions.scope = "col"; row.appendChild(actions); dom.tableHead.replaceChildren(row);
 }
+/* ---------- Journal table incremental update (performance) ---------- */
+// Previously every attendance mark rebuilt the whole table (~30 students x
+// ~31 days = 900+ buttons), which froze low-end phones for seconds. Now the
+// table state is cached by signature; unchanged renders are skipped entirely
+// and status-only changes patch individual cells in place.
+var lastTableSignature = null;
+function buildTableData(days) {
+  var visible = getVisibleStudents(), filtered = getFilteredStudents();
+  return {
+    visible: visible, filtered: filtered,
+    statuses: filtered.map(function (s) {
+      return days.map(function (d) {
+        var v = normalizeStatusEntry(state.attendance[s.id + "_" + formatDateKey(d)]);
+        return v ? v.status : STATUS_UNMARKED;
+      });
+    })
+  };
+}
+function tableSignature(data, days) {
+  var parts = [state.viewMode, data.visible.length, data.filtered.length, days.length];
+  data.filtered.forEach(function (s, i) { parts.push(s.id + ":" + s.name + ":" + data.statuses[i].join(",")); });
+  return parts.join("|");
+}
+function setCellStatus(btn, student, day, status) {
+  btn.className = "attendance-button " + status;
+  if (state.viewMode === "day") {
+    var labels = { present: "\u0411\u044b\u043b", absent: "\u041d\u0435\u0442", late: "\u041e\u043f\u043e\u0437\u0434\u0430\u043b", unmarked: "\u041e\u0442\u043c\u0435\u0442\u0438\u0442\u044c" };
+    btn.replaceChildren(element("span", "day-status-icon", statusSymbols[status]), element("span", "day-status-label", labels[status]));
+  } else {
+    btn.textContent = statusSymbols[status];
+  }
+  btn.title = statusLabels[status];
+  btn.setAttribute("aria-label", student.name + ", " + day.toLocaleDateString("ru-RU") + ": " + statusLabels[status]);
+}
+function patchTableCells(data, days) {
+  var rows = dom.tableBody.rows;
+  for (var r = 0; r < data.filtered.length && r < rows.length; r++) {
+    var student = data.filtered[r], sts = data.statuses[r], cells = rows[r].cells;
+    for (var c = 0; c < days.length; c++) {
+      var btn = cells[c + 1] && cells[c + 1].firstChild;
+      if (!btn || !btn.classList) continue;
+      if (btn.className !== "attendance-button " + sts[c]) setCellStatus(btn, student, days[c], sts[c]);
+    }
+  }
+}
 function renderBody(days) {
-  var visible = getVisibleStudents(), filtered = getFilteredStudents(), fragment = document.createDocumentFragment();
-  dom.emptyMessage.style.display = visible.length ? "none" : "block"; dom.noSearchResults.style.display = visible.length && !filtered.length ? "block" : "none";
-  filtered.forEach(function (student) {
+  var data = buildTableData(days);
+  dom.emptyMessage.style.display = data.visible.length ? "none" : "block";
+  dom.noSearchResults.style.display = data.visible.length && !data.filtered.length ? "block" : "none";
+  var sig = tableSignature(data, days);
+  if (sig === lastTableSignature && dom.tableBody.rows.length === data.filtered.length) return;
+  var prevSig = lastTableSignature;
+  lastTableSignature = sig;
+  // Fast path: same structure, only statuses changed -> patch cells in place.
+  if (prevSig) {
+    var prev = prevSig.split("|");
+    if (prev[0] === state.viewMode && Number(prev[2]) === data.filtered.length && Number(prev[3]) === days.length) { patchTableCells(data, days); return; }
+  }
+  var fragment = document.createDocumentFragment();
+  data.filtered.forEach(function (student, index) {
     var row = element("tr"), name = element("th", "student-name-cell"); name.scope = "row";
-    var flex = element("div", "student-name-flex"); flex.appendChild(element("span", "student-number", visible.indexOf(student) + 1));
-    var text = element("button", "student-name-text student-card-trigger", student.name); text.type = "button"; text.title = "Открыть карточку: " + student.name; text.dataset.action = "card"; text.dataset.studentId = student.id; text.setAttribute("aria-label", "Карточка ученика: " + student.name); text.setAttribute("aria-haspopup", "dialog"); flex.appendChild(text); name.appendChild(flex); row.appendChild(name);
-    days.forEach(function (day) {
-      var dateKey = formatDateKey(day), value = normalizeStatusEntry(state.attendance[student.id + "_" + dateKey]), status = value ? value.status : STATUS_UNMARKED;
-      var cell = element("td", (isWeekend(day) ? "weekend " : "") + (isToday(day) ? "today-column" : "")), btn = element("button", "attendance-button " + status, state.viewMode === "day" ? statusSymbols[status] + " " + statusLabels[status] : statusSymbols[status]);
-      if(state.viewMode === "day"){
-        btn.replaceChildren(element("span","day-status-icon",statusSymbols[status]),element("span","day-status-label",{present:"Был",absent:"Нет",late:"Опоздал",unmarked:"Отметить"}[status]));
-      }
-      btn.type = "button"; btn.dataset.studentId = student.id; btn.dataset.dateKey = dateKey;
-      btn.title = statusLabels[status]; btn.setAttribute("aria-label", student.name + ", " + day.toLocaleDateString("ru-RU") + ": " + statusLabels[status]); cell.appendChild(btn); row.appendChild(cell);
+    var flex = element("div", "student-name-flex"); flex.appendChild(element("span", "student-number", data.visible.indexOf(student) + 1));
+    var text = element("button", "student-name-text student-card-trigger", student.name); text.type = "button"; text.title = "\u041e\u0442\u043a\u0440\u044b\u0442\u044c \u043a\u0430\u0440\u0442\u043e\u0447\u043a\u0443: " + student.name; text.dataset.action = "card"; text.dataset.studentId = student.id; text.setAttribute("aria-label", "\u041a\u0430\u0440\u0442\u043e\u0447\u043a\u0430 \u0443\u0447\u0435\u043d\u0438\u043a\u0430: " + student.name); text.setAttribute("aria-haspopup", "dialog"); flex.appendChild(text); name.appendChild(flex); row.appendChild(name);
+    days.forEach(function (day, di) {
+      var status = data.statuses[index][di];
+      var cell = element("td", (isWeekend(day) ? "weekend " : "") + (isToday(day) ? "today-column" : "")), btn = element("button", "attendance-button " + status);
+      btn.type = "button"; btn.dataset.studentId = student.id; btn.dataset.dateKey = formatDateKey(day);
+      setCellStatus(btn, student, day, status); cell.appendChild(btn); row.appendChild(cell);
     });
-    var actions = element("td", "actions-column"), edit = element("button", "secondary row-edit", "Изменить"), remove = element("button", "row-remove", "Удалить");
+    var actions = element("td", "actions-column"), edit = element("button", "secondary row-edit", "\u0418\u0437\u043c\u0435\u043d\u0438\u0442\u044c"), remove = element("button", "row-remove", "\u0423\u0434\u0430\u043b\u0438\u0442\u044c");
     edit.type = remove.type = "button"; edit.dataset.action = "rename"; remove.dataset.action = "remove"; edit.dataset.studentId = remove.dataset.studentId = student.id;
-    edit.setAttribute("aria-label", "Изменить имя: " + student.name); remove.setAttribute("aria-label", "Удалить: " + student.name); actions.append(edit, remove); row.appendChild(actions); fragment.appendChild(row);
-  }); dom.tableBody.replaceChildren(fragment);
+    edit.setAttribute("aria-label", "\u0418\u0437\u043c\u0435\u043d\u0438\u0442\u044c \u0438\u043c\u044f: " + student.name); remove.setAttribute("aria-label", "\u0423\u0434\u0430\u043b\u0438\u0442\u044c: " + student.name); actions.append(edit, remove); row.appendChild(actions); fragment.appendChild(row);
+  });
+  dom.tableBody.replaceChildren(fragment);
 }
 function renderSummary(days) {
   var students = getVisibleStudents(), ids = new Set(students.map(function (s) { return s.id; })), count = { present: 0, absent: 0, late: 0 };
@@ -1075,7 +1142,7 @@ function restoreProjectData(data,current,time){
 function named(type,id){var v=(state[type]||[]).find(function(x){return x.id===id;});return v?v.name:id;}
 function el(tag,text,cls){var n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;}
 function fillSelect(node,items,all){var value=node.value;node.replaceChildren();if(all)node.appendChild(new Option(all,''));items.filter(function(x){return !x.deleted;}).forEach(function(x){node.appendChild(new Option(x.name,x.id));});if(Array.from(node.options).some(function(o){return o.value===value;}))node.value=value;}
-function commitProject(keys){if(!effectivePermissions().canEditJournal){showToast('Роль «'+DEVICE_ROLES[deviceRole(deviceId)].label+'»: изменения недоступны','warning');return;}markChanged(keys);saveLocal();render();scheduleSync();}
+function commitProject(keys){if(!effectivePermissions().canEditJournal){showToast('Роль «'+DEVICE_ROLES[deviceRole(deviceId)].label+'»: изменения недоступны','warning');return;}markChanged(keys);scheduleSaveLocal();render();scheduleSync();}
 function createNamed(type){if(!effectivePermissions().canEditJournal)return showToast('Роль «'+DEVICE_ROLES[deviceRole(deviceId)].label+'»: добавление недоступно','warning');var name=window.prompt(type==='classes'?'Название класса':'Название предмета');if(name===null)return;name=name.trim();if(!name||name.length>200)return showToast('Введите название до 200 символов','warning');var existing=state[type].find(function(x){return !x.deleted&&x.name.toLowerCase()===name.toLowerCase();});if(existing)return showToast('Такое название уже есть','warning');var item={id:generateId(),name:name,updatedAt:nextTimestamp(),actor:deviceId,deleted:false};state[type].push(item);if(type==='classes')state.selectedClass=item.id;commitProject([type+'/'+item.id]);if(type==='subjects'&&dom.lessonSubject)dom.lessonSubject.value=item.id;}
 function createLesson(){
   if(!effectivePermissions().canEditJournal)return showToast('Роль «'+DEVICE_ROLES[deviceRole(deviceId)].label+'»: занятия недоступны','warning');
@@ -1258,7 +1325,7 @@ function checkSyncConflicts(remote,local){
     if(local){var safe=mergeData(local,remote.data);Object.keys(conflicts).forEach(function(k){var v=getRecord(local,k);if(v)putRecord(safe,k,v);});syncApply(safe);}
     saveLocal();renderOffline();syncRuntime.lastConflictRevision=state.revision;var error=Error('Есть конфликтующие изменения. Выберите нужные записи в очереди синхронизации.');error.noRetry=true;error.conflict=true;throw error;}
 }
-function resolveConflict(key,index){var choices=offline.conflicts[key];if(!choices||!choices[index])return;var selected=copy(choices[index]),clock={};choices.forEach(function(v){clock=unionClocks(clock,cleanClock(v.clock,v.updatedAt));});var time=nextTimestamp();clock[causalActor()]=time;selected.clock=clock;selected.updatedAt=time;selected.actor=deviceId;var data=buildPayload();putRecord(data,key,selected);applyMergedToState(data);offline.queue[key]={op:generateId()+'-'+time,time:time,done:false};delete offline.conflicts[key];state.revision++;syncRuntime.hasPendingChanges=true;saveLocal();render();scheduleSync();showToast('Выбранная запись сохранена и ожидает отправки','success');}
+function resolveConflict(key,index){var choices=offline.conflicts[key];if(!choices||!choices[index])return;var selected=copy(choices[index]),clock={};choices.forEach(function(v){clock=unionClocks(clock,cleanClock(v.clock,v.updatedAt));});var time=nextTimestamp();clock[causalActor()]=time;selected.clock=clock;selected.updatedAt=time;selected.actor=deviceId;var data=buildPayload();putRecord(data,key,selected);applyMergedToState(data);offline.queue[key]={op:generateId()+'-'+time,time:time,done:false};delete offline.conflicts[key];state.revision++;syncRuntime.hasPendingChanges=true;scheduleSaveLocal();render();scheduleSync();showToast('Выбранная запись сохранена и ожидает отправки','success');}
 var offlineListSignature="";
 function renderOfflineNow(){if(!dom.queueCount)return;var count=queuedEntries().length,conflicts=Object.keys(offline.conflicts);dom.queueCount.textContent=String(count);dom.lastSyncTime.textContent=formatTime(syncConfig.lastSync);dom.offlineStatus.textContent=conflicts.length?'Нужен выбор: конфликтов '+conflicts.length:!syncOnline()?'Нет интернета · изменения сохраняются здесь':count?(syncConfigured()?(syncRuntime.pollIntervalMs===0?'Изменения ждут ручной отправки':'Изменения ожидают отправки'):'Изменения сохранены · подключите синхронизацию'):(syncConfigured()?'Все изменения отправлены':'Сохранено только на этом устройстве');dom.offlineStatus.classList.toggle('has-conflicts',!!conflicts.length);var signature=JSON.stringify([offline.queue,offline.conflicts]);
 if(signature===offlineListSignature)return;offlineListSignature=signature;
@@ -2263,8 +2330,9 @@ function announceIncoming(before,after,source){
   syncRuntime.lastReceivedAt=Date.now();syncRuntime.lastReceivedCount=keys.length;
   var text=source+" · "+formatTime(syncRuntime.lastReceivedAt)+" · записей: "+keys.length;
   if(dom.syncNotice){dom.syncNotice.hidden=false;dom.syncNotice.textContent=text+". "+keys.slice(0,3).map(recordLabel).join("; ")+(keys.length>3?"…":"");}
+  var keySet = new Set(keys);
   document.querySelectorAll(".attendance-button").forEach(function(button){
-    if(keys.indexOf("attendance/"+button.dataset.studentId+"_"+button.dataset.dateKey)!==-1)button.classList.add("just-received");
+    if(keySet.has("attendance/"+button.dataset.studentId+"_"+button.dataset.dateKey))button.classList.add("just-received");
   });
   if(attendanceModalState.open){var entry=state.attendance[attendanceModalState.studentId+"_"+attendanceModalState.dateKey];attendanceModalState.currentStatus=entry?entry.status:STATUS_UNMARKED;updateAttendanceModalOptions();}
   showToast(text,"success");
