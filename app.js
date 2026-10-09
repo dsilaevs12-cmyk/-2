@@ -25,7 +25,7 @@ var syncConfig = { enabled: false, token: "", gistId: "", isPublicGist: false, l
 var deviceId = "", logicalTime = 0, activeModal = null, previousFocus = null, modalStack = [];
 var attendanceModalState = { open: false, studentId: "", dateKey: "", currentStatus: STATUS_UNMARKED };
 var dom = {};
-["studentName", "addStudentButton", "monthPicker", "previousMonthButton", "nextMonthButton", "todayButton", "monthTitle", "tableHead", "tableBody", "emptyMessage", "searchInput", "clearSearchButton", "searchResultsInfo", "noSearchResults", "toast", "syncStatus", "syncStatusText", "toggleSyncConfigButton", "syncConfig", "githubToken", "gistId", "gistPublicCheckbox", "publicGistWarning", "saveSyncConfigButton", "testConnectionButton", "disableSyncButton", "syncNowButton", "forcePushButton", "forcePullButton", "debugButton", "refreshDebugButton", "copyDebugButton", "debugBlock", "debugPre", "intervalSelect", "newsBanner", "newsText", "newsCloseButton", "versionButton", "versionButtonText", "journalEdition", "devPanelModal", "devCloseButton", "devExitButton", "devVersionTextInput", "devSaveVersionTextButton", "devResetVersionTextButton", "devToggleMaintenanceButton", "devMaintenanceMessageInput", "devSaveMaintenanceMessageButton", "devResetMaintenanceMessageButton", "devNewsInput", "devSaveNewsButton", "devClearNewsButton", "maintenanceOverlay", "maintenanceMessageText", "maintenanceActiveBadge", "maintenanceDevAccessButton", "attendanceModal", "attCloseButton", "attStudentName", "attDateText", "attOptions", "localSaveStatus", "exportBackupButton", "importBackupButton", "importBackupInput", "restoreBackupButton", "printButton", "summaryStudents", "summaryPresent", "summaryAbsent", "summaryLate", "coverageInfo", "journalApp", "printMonthTitle"].forEach(function (id) { dom[id] = document.getElementById(id); });
+["studentName", "addStudentButton", "monthPicker", "previousMonthButton", "nextMonthButton", "todayButton", "monthTitle", "tableHead", "tableBody", "emptyMessage", "searchInput", "clearSearchButton", "searchResultsInfo", "noSearchResults", "toast", "syncStatus", "syncStatusText", "toggleSyncConfigButton", "syncConfig", "githubToken", "gistId", "gistPublicCheckbox", "publicGistWarning", "saveSyncConfigButton", "testConnectionButton", "disableSyncButton", "syncNowButton", "forcePushButton", "forcePullButton", "debugButton", "refreshDebugButton", "copyDebugButton", "debugBlock", "debugPre", "intervalSelect", "newsBanner", "newsText", "newsCloseButton", "versionButton", "versionButtonText", "journalEdition", "devPanelModal", "devCloseButton", "devExitButton", "devVersionTextInput", "devSaveVersionTextButton", "devResetVersionTextButton", "devToggleMaintenanceButton", "devMaintenanceMessageInput", "devSaveMaintenanceMessageButton", "devResetMaintenanceMessageButton", "devNewsInput", "devSaveNewsButton", "devClearNewsButton", "devClearAllButton", "maintenanceOverlay", "maintenanceMessageText", "maintenanceActiveBadge", "maintenanceDevAccessButton", "attendanceModal", "attCloseButton", "attStudentName", "attDateText", "attOptions", "localSaveStatus", "exportBackupButton", "importBackupButton", "importBackupInput", "restoreBackupButton", "printButton", "summaryStudents", "summaryPresent", "summaryAbsent", "summaryLate", "coverageInfo", "journalApp", "printMonthTitle"].forEach(function (id) { dom[id] = document.getElementById(id); });
 dom.studentNameInput = dom.studentName;
 var storage = accessibleStorage("localStorage"), sessStorage = accessibleStorage("sessionStorage");
 
@@ -724,6 +724,21 @@ function restoreData(data) {
   settingFields.forEach(function (field) { data.settings.fieldMeta[field] = { updatedAt: time, actor: deviceId }; }); data.settings.updatedAt = time;
   var previousTracked = trackedPayload; restoreProjectData(data, current, time); applyMergedToState(data); trackedPayload = previousTracked; markChanged(); saveLocal(true); render(); if (activeModal === dom.devPanelModal) refreshDevPanel(); scheduleSync();
 }
+// Full wipe: removes every student, all attendance marks/absences, homework and lessons
+// across ALL classes. Classes and subjects are kept so the journal stays usable.
+// A recovery backup is saved first — "Восстановить последнюю" undoes the wipe.
+function clearAllJournalData() {
+  var perms = effectivePermissions();
+  if (!perms.canEditJournal || !perms.canManageDevices) { showToast("Полная очистка доступна учителю или тех. администрации", "warning"); return; }
+  var liveStudents = state.students.filter(function (s) { return !s.deleted; }).length;
+  var liveLessons = (state.lessons || []).filter(function (l) { return !l.deleted; }).length;
+  var liveHw = (state.homework || []).filter(function (h) { return !h.deleted; }).length;
+  if (!liveStudents && !liveLessons && !liveHw && !Object.keys(state.attendance || {}).length) { showToast("Журнал уже пуст — очищать нечего", "info"); return; }
+  if (!window.confirm("Полная очистка: удалить ВСЕХ учеников (" + liveStudents + "), все отметки и пропуски, домашние задания (" + liveHw + ") и занятия (" + liveLessons + ") во всех классах?\nКлассы и предметы останутся. Перед удалением будет сохранена резервная копия.")) return;
+  executeFullClear();
+}
+// Deferred to the project layer so it can use the extended payload/queue APIs.
+function executeFullClear() { setTimeout(runFullClear, 0); }
 function restoreBackup() {
   if (!effectivePermissions().canManageDevices) { showToast("Восстановление копий доступно учителю или тех. администрации", "warning"); return; }
   try { var backups = storage && JSON.parse(storage.getItem(BACKUP_KEY) || "[]"); if (!backups || !backups.length) { showToast("Пока нет автоматических резервных копий", "warning"); return; }
@@ -753,6 +768,7 @@ function wireCoreEvents() {
   dom.devResetMaintenanceMessageButton.addEventListener("click", function () { updateSettings({ maintenanceMessage: DEFAULT_MAINTENANCE_MSG }); refreshDevPanel(); });
   dom.devSaveNewsButton.addEventListener("click", function () { updateSettings({ news: dom.devNewsInput.value.trim().slice(0, 4000) }); try { if (storage) storage.removeItem(NEWS_DISMISS_KEY); } catch (e) {} renderNews(); showToast("Объявление сохранено", "success"); });
   dom.devClearNewsButton.addEventListener("click", function () { updateSettings({ news: "" }); refreshDevPanel(); });
+  if (dom.devClearAllButton) dom.devClearAllButton.addEventListener("click", clearAllJournalData);
   dom.newsCloseButton.addEventListener("click", function () { try { if (storage) storage.setItem(NEWS_DISMISS_KEY, state.settings.news.trim()); } catch (e) {} dom.newsBanner.classList.remove("visible"); });
   dom.exportBackupButton.addEventListener("click", exportBackup); dom.importBackupButton.addEventListener("click", function () { dom.importBackupInput.click(); }); dom.restoreBackupButton.addEventListener("click", restoreBackup); dom.printButton.addEventListener("click", function () { window.print(); });
   dom.importBackupInput.addEventListener("change", async function (e) {
@@ -2254,3 +2270,27 @@ function wireAppUpdates(){
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+
+/* Full wipe implementation (project layer): marks every student, lesson and
+   homework record as deleted across ALL classes, resets all attendance and
+   lesson marks, saves a recovery backup first, and queues every changed
+   record for synchronization. Classes and subjects are preserved. */
+function runFullClear(){
+  try{
+    if(!effectivePermissions().canEditJournal||!effectivePermissions().canManageDevices){showToast("Полная очистка доступна учителю или тех. администрации","warning");return;}
+    var word=window.prompt("Это необратимое действие (отменить можно только восстановлением копии).\nДля подтверждения введите слово ОЧИСТИТЬ:");
+    if(word===null)return;
+    if(String(word).trim().toUpperCase()!=="ОЧИСТИТЬ"){showToast("Очистка отменена: код подтверждения не совпал","info");return;}
+    saveRecoveryBackup();
+    var time=nextTimestamp(),keys=[];
+    state.students.forEach(function(s){if(!s.deleted){s.deleted=true;s.updatedAt=nextTimestamp();s.actor=deviceId;keys.push("students/"+s.id);}});
+    Object.keys(state.attendance||{}).forEach(function(k){state.attendance[k]={status:STATUS_UNMARKED,updatedAt:nextTimestamp(),actor:deviceId};keys.push("attendance/"+k);});
+    (state.lessons||[]).forEach(function(l){if(!l.deleted){l.deleted=true;l.updatedAt=nextTimestamp();l.actor=deviceId;keys.push("lessons/"+l.id);}});
+    (state.homework||[]).forEach(function(h){if(!h.deleted){h.deleted=true;h.updatedAt=nextTimestamp();h.actor=deviceId;keys.push(homeworkListKey+"/"+h.id);}});
+    Object.keys(state.lessonMarks||{}).forEach(function(k){state.lessonMarks[k]={status:"unmarked",updatedAt:nextTimestamp(),actor:deviceId};keys.push("lessonMarks/"+k);});
+    var flat=flattenRecords(buildPayload());
+    keys.forEach(function(k){if(offline.queue[k])offline.queue[k].done=false;else if(flat[k])offline.queue[k]={op:generateId()+"-"+flat[k].updatedAt,time:flat[k].updatedAt,done:false};});
+    markChanged(keys);saveLocal(true);render();scheduleSync();
+    showToast("Журнал очищен: удалены все ученики, отметки, домашние задания и занятия. Восстановить: «Восстановить последнюю»","success");
+  }catch(e){console.error(e);showToast("Очистка не выполнена: "+e.message,"error");}
+}
