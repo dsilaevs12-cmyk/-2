@@ -1309,8 +1309,12 @@ function updateSyncUI() {
   renderOffline();
   renderSyncOverview();
   var configured = syncConfigured(), readOnly = syncReadOnly();
-  if (dom.gistPublicCheckbox) dom.gistPublicCheckbox.checked = Boolean(syncConfig.isPublicGist);
-  if (dom.publicGistWarning) dom.publicGistWarning.hidden = !syncConfig.isPublicGist;
+  // Keep the checkbox in the connection form in sync with the saved config.
+  // Doing this unconditionally used to overwrite whatever the user was
+  // selecting right before pressing «Сохранить подключение» (the flag reset
+  // itself back to false), which broke saving and left the status badge stuck.
+  if (dom.gistPublicCheckbox && document.activeElement !== dom.gistPublicCheckbox) dom.gistPublicCheckbox.checked = Boolean(syncConfig.isPublicGist);
+  if (dom.publicGistWarning) dom.publicGistWarning.hidden = !syncFormPublicFlag();
   if (!configured) setSyncStatus("off", syncConfig.enabled && syncConfig.gistId ? "Нет доступа к Gist — проверьте ID или добавьте токен" : "На этом устройстве");
   else if (readOnly) {
     // Read-only mode never uploads, so it is NOT "saved locally only": the
@@ -1319,8 +1323,8 @@ function updateSyncUI() {
     // strict networks), which made users think sync was broken.
     setSyncStatus(syncOnline() ? "on" : "paused", syncConfig.lastSync ? "Публичный Gist · синхр. " + formatTime(syncConfig.lastSync) : "Публичный Gist · только чтение");
   }
-  else if (!syncOnline()) setSyncStatus("paused", "Нет сети · изменения сохранятся на устройстве");
   else if (syncRuntime.isSyncing) setSyncStatus("busy", "Синхронизация…");
+  else if (!syncOnline()) setSyncStatus("paused", "Нет сети · изменения сохранятся на устройстве");
   else if (syncConfig.lastSyncStatus === "error") setSyncStatus("error", syncRuntime.retryTimer ? "Ошибка · повтор запланирован" : "Ошибка синхронизации");
   else if (syncRuntime.hasPendingChanges || state.revision > state.lastSyncedRevision) setSyncStatus("paused", syncRuntime.pollIntervalMs === 0 ? "Есть изменения · отправьте вручную" : "Изменения ждут отправки");
   else setSyncStatus("on", syncConfig.lastSync ? "Синхр. " + formatTime(syncConfig.lastSync) : "Готово к синхронизации");
