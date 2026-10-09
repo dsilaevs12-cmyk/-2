@@ -469,13 +469,15 @@
     button.danger {
       color: var(--absent-text);
       background: var(--absent);
-      border: 1px solid transparent;
+      border: 1px solid var(--absent-border);
       box-shadow: none;
     }
     button.danger:hover { background: #fecaca; }
 
+    /* Danger buttons must keep readable text in dark mode — the old rule
+       painted light-red text over the same light-red background. */
     @media (prefers-color-scheme: dark) {
-      button.danger { background: var(--absent); color: #fecaca; }
+      button.danger { background: #7f1d1d; color: #fecaca; border-color: #b91c1c; }
       button.danger:hover { background: #991b1b; }
     }
 
@@ -2743,3 +2745,71 @@ body[data-tech-admin] .role-banner{background:#dff1ea;border-color:#176c5c;color
 /* Hide the journal column and show only the account card. */
 #journalApp.account-view .journal-content { display: none !important; }
 #journalApp.account-view #accountPanel { display: block !important; }
+
+/* ============================================================
+   3.3.1 — Interface calibration pass: unified corner radii,
+   dark-mode gamma shifts and alignment fixes for the settings
+   panel (device/user lists) introduced with user deletion.
+   Placed last so it wins over earlier shorthand rules.
+   ============================================================ */
+
+/* Corner-radius harmonisation: nested controls use one step less
+   than their container (card 16 → inner field/button 12 → chip 8),
+   previously mixed 4/5/6/7/10/11/13px values looked accidental. */
+.panel, .table-wrapper { border-radius: var(--radius-lg); }
+button, input[type="text"], input[type="password"], input[type="date"],
+input:not([type]), select, textarea { border-radius: var(--radius-sm); }
+.view-switcher { border-radius: var(--radius-md); }
+.view-switcher button { border-radius: var(--radius-sm); }
+.student-add-mode { border-radius: var(--radius-md); }
+#studentAccountSelect { border-radius: var(--radius-md); }
+.legend-box, .legend-box-late, .legend-box-today, .legend-box-present, .legend-box-unmarked { border-radius: var(--radius-sm); }
+.summary-card { border-radius: var(--radius-lg); }
+.summary-card .summary-symbol { border-radius: var(--radius-sm); }
+.student-number { border-radius: var(--radius-sm); }
+.attendance-button { border-radius: var(--radius-sm); }
+.att-head-close { border-radius: var(--radius-sm); }
+.att-option { border-radius: var(--radius-md); }
+.att-option-icon { border-radius: var(--radius-sm); }
+.empty::before { border-radius: var(--radius-md); }
+.dev-section { border-radius: var(--radius-md); }
+.modal { border-radius: var(--radius-xl); }
+.modal.modal-dev { max-width: 640px; }
+.student-card-trigger { border-radius: var(--radius-xs, 6px); }
+
+/* Settings lists: rows must share the same radius language and
+   never overflow their rounded parents. */
+.device-list, .user-list { min-width: 0; }
+.device-row { border-radius: var(--radius-md); }
+.device-role, .device-input { border-radius: var(--radius-sm); }
+.user-remove { border-radius: var(--radius-sm); }
+.device-badge { border-radius: var(--radius-full); }
+.role-banner { border-radius: var(--radius-md); }
+
+/* Dark-mode gamma correction: flat #1a2537/#16283a panels read as
+   muddy grey next to the cooler background; lift them slightly and
+   keep borders consistent with --border-strong in dark scheme. */
+@media (prefers-color-scheme: dark) {
+  .dev-section { background: #16202e; border-color: #2c3a4d; }
+  .dev-section:hover { border-color: #3b4d66; }
+  .dev-section input, .dev-section textarea { background: #101a26; border-color: #2c3a4d; color: #e6edf5; }
+  .dev-section input:focus, .dev-section textarea:focus { border-color: var(--primary-light); box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.22); }
+  .device-row { background: #131e2b; border-color: #2c3a4d; }
+  .device-role, .device-input { background: #101a26; border-color: #2c3a4d; color: #e6edf5; }
+  .modal { background: #131e2b; border-color: #2c3a4d; }
+}
+
+/* Row alignment: grid children were allowed to exceed their track
+   (missing min-width:0), causing the name column to push the delete
+   button out of the card on narrow screens. */
+.device-row > * { min-width: 0; }
+.device-row .device-name { display: inline; }
+.user-row .device-seen { text-align: left; }
+@media (max-width: 640px) {
+  .user-row .user-remove { width: 100%; }
+}
+
+/* Print: settings-only widgets are irrelevant on paper. */
+@media print {
+  .modal-backdrop, .glass-navigation, .news-banner, .toast { display: none !important; }
+}
