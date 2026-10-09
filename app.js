@@ -1695,8 +1695,11 @@ syncListen(dom.saveSyncConfigButton, "click", async function () {
     } else {
       // Read-only connection: load the public Gist right away instead of
       // waiting for the first poll tick, so the journal appears immediately
-      // after saving the connection (fixes defect #4).
-      try { await fullSync("auto"); } catch (error) {}
+      // after saving the connection (fixes defect #4). fullSync("auto") used
+      // to be dropped silently because syncAutomatic() is false without a
+      // token — that left the journal never fetched and the status stuck on
+      // "только чтение"/"сохранено локально". Run it as a manual cycle.
+      try { await fullSync("manual"); } catch (error) {}
       showToast("Подключено в режиме «только чтение»: данные загружаются из публичного Gist. Для отправки изменений добавьте токен.", "warning");
     }
   } catch (error) { if (!error.stale) showToast(error.message, "error"); }
