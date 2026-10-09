@@ -130,10 +130,12 @@ function cleanDeviceMeta(meta) {
     var name = typeof entry.name === "string" ? entry.name.trim().slice(0, 40) : "";
     var seenAt = Number(entry.seenAt);
     var updatedAt = Number(entry.updatedAt);
-    // Device role: teacher / student / admin / observer (default: teacher).
-    // Stored per device and synced like the name; see DEVICE_ROLES below.
+    // Device role: teacher / student / observer (default: teacher).
+    // techAdmin is a separate ADD-ON flag (granted via the settings password),
+    // not a base role — it stacks on top of any role. See DEVICE_ROLES below.
     var role = DEVICE_ROLE_KEYS.indexOf(entry.role) !== -1 ? entry.role : "teacher";
-    result[id] = { name: name, role: role, seenAt: Number.isFinite(seenAt) && seenAt > 0 ? seenAt : 0, updatedAt: Number.isFinite(updatedAt) && updatedAt > 0 ? updatedAt : 0 };
+    var techAdmin = entry.techAdmin === true || entry.role === "admin"; // migrate legacy "admin" role → add-on flag
+    result[id] = { name: name, role: role, techAdmin: techAdmin, seenAt: Number.isFinite(seenAt) && seenAt > 0 ? seenAt : 0, updatedAt: Number.isFinite(updatedAt) && updatedAt > 0 ? updatedAt : 0 };
   });
   return result;
 }
@@ -144,28 +146,46 @@ function mergeDeviceMeta(local, remote) {
     if (!existing) { result[id] = incoming; return; }
     var latest = (incoming.updatedAt || 0) >= (existing.updatedAt || 0) ? incoming : existing;
     var other = latest === incoming ? existing : incoming;
-    result[id] = { name: (latest.name || other.name || ""), role: DEVICE_ROLE_KEYS.indexOf(latest.role) !== -1 ? latest.role : (DEVICE_ROLE_KEYS.indexOf(other.role) !== -1 ? other.role : "teacher"), seenAt: Math.max(existing.seenAt || 0, incoming.seenAt || 0), updatedAt: Math.max(existing.updatedAt || 0, incoming.updatedAt || 0) };
+    result[id] = { name: (latest.name || other.name || ""), role: DEVICE_ROLE_KEYS.indexOf(latest.role) !== -1 ? latest.role : (DEVICE_ROLE_KEYS.indexOf(other.role) !== -1 ? other.role : "teacher"), techAdmin: Boolean(latest.techAdmin || other.techAdmin), seenAt: Math.max(existing.seenAt || 0, incoming.seenAt || 0), updatedAt: Math.max(existing.updatedAt || 0, incoming.updatedAt || 0) };
   });
   return result;
 }
-/* ---------- Device roles (teacher / student / admin / observer) ---------- */
-// Roles are stored in deviceMeta and travel inside the synced journal, so the
-// whole fleet sees one consistent assignment. Editing roles requires a write
+/* ---------- Device roles (teacher / student / observer) + tech-admin add-on ---------- */
+// Base roles are stored in deviceMeta and travel inside the synced journal, so
+// the whole fleet sees one consistent assignment. Editing roles requires a write
 // connection (token); the current device always keeps its own role editable.
+// "Тех. администрация" is NOT a base role: it is an add-on flag granted on a
+// device after entering the settings password; it stacks next to any base role
+// and unlocks every function regardless of that role.
 var DEVICE_ROLES = {
-  teacher: { label: "Учитель", hint: "Полный доступ к журналу: ученики, занятия, посещаемость и домашние задания." },
-  student: { label: "Ученик", hint: "Только просмотр: журнал, оценки и домашние задания без изменений." },
-  admin: { label: "Тех. администрация", hint: "Просмотр всего + управление устройствами и синхронизацией." },
-  observer: { label: "Наблюдатель", hint: "Только чтение отчётов и статистики, без доступа к редактированию." }
+  teacher: { label: "Учитель", hint: "Отметки посещаемости, добавление учеников и классов, задания (добавление/удаление), статистика." },
+  student: { label: "Ученик", hint: "Только просмотр домашних заданий и своей посещаемости/пропусков." },
+  observer: { label: "Наблюдатель", hint: "Полный обзор журнала, отчётов и статистики — без каких-либо изменений." }
 };
 var DEVICE_ROLE_KEYS = Object.keys(DEVICE_ROLES);
 function deviceRole(id) {
   var entry = (state.deviceMeta || {})[id];
   return entry && DEVICE_ROLE_KEYS.indexOf(entry.role) !== -1 ? entry.role : "teacher";
 }
+// Tech-admin add-on: true if this device was granted it via the settings password.
+function deviceTechAdmin(id) {
+  var entry = (state.deviceMeta || {})[id];
+  return Boolean(entry && entry.techAdmin);
+}
+function setDeviceTechAdmin(id, enabled) {
+  var meta = state.deviceMeta || (state.deviceMeta = {});
+  var entry = meta[id] || (meta[id] = { seenAt: 0 });
+  if (Boolean(entry.techAdmin) === Boolean(enabled)) return false;
+  if (id !== deviceId && !(effectivePermissions().canManageDevices && syncWritable())) { showToast("Выдать статус «Тех. администрация» другому устройству может учитель/тех. админ с токеном", "warning"); return false; }
+  entry.techAdmin = Boolean(enabled);
+  entry.updatedAt = nextTimestamp();
+  saveLocal(); scheduleSync(); renderDeviceList(); applyRoleRestrictions();
+  showToast((enabled ? "Статус «Тех. администрация» выдан устройству " : "Статус «Тех. администрация» снят с устройства ") + (entry.name || id.slice(0, 4)), enabled ? "success" : "info");
+  return true;
+}
 function setDeviceRole(id, role) {
   if (DEVICE_ROLE_KEYS.indexOf(role) === -1) return false;
-  if (id !== deviceId && !syncWritable()) { showToast("Смена ролей других устройств требует токен для отправки", "warning"); return false; }
+  if (id !== deviceId && !(effectivePermissions().canManageDevices && syncWritable())) { showToast("Смена ролей других устройств требует прав учителя/тех. админа и токен для отправки", "warning"); return false; }
   var meta = state.deviceMeta || (state.deviceMeta = {});
   var entry = meta[id] || (meta[id] = { seenAt: 0 });
   entry.role = role;
@@ -175,30 +195,49 @@ function setDeviceRole(id, role) {
   showToast("Роль «" + DEVICE_ROLES[role].label + "» назначена устройству " + (entry.name || id.slice(0, 4)), "success");
   return true;
 }
-// Enforce the current device's role on the interface: read-only roles lock all
-// mutating controls. Admin may still manage devices/sync (those stay enabled).
-function applyRoleRestrictions() {
+// Effective permissions for the current device. The tech-admin add-on overrides
+// every restriction: full access to all functions regardless of the base role.
+function effectivePermissions() {
   var role = deviceRole(deviceId);
-  var readOnly = role === "student" || role === "observer";
+  var techAdmin = deviceTechAdmin(deviceId) || state.devUnlocked; // dev-unlocked implies tech admin on this device
+  return {
+    role: role,
+    techAdmin: techAdmin,
+    canEditJournal: techAdmin || role === "teacher",   // attendance marks, students, classes, lessons
+    canManageHomework: techAdmin || role === "teacher", // add/delete homework
+    canViewStats: true,                                 // everyone can view reports/statistics
+    canManageDevices: techAdmin || role === "teacher"   // rename devices, assign roles
+  };
+}
+// Enforce the current device's role on the interface: read-only roles lock all
+// mutating controls. The tech-admin add-on lifts every lock immediately.
+function applyRoleRestrictions() {
+  var perms = effectivePermissions();
+  var readOnly = !perms.canEditJournal; // student & observer (without add-on) are read-only
   document.body.classList.toggle("role-readonly", readOnly);
-  document.body.setAttribute("data-role", role);
+  document.body.setAttribute("data-role", perms.role);
+  document.body.toggleAttribute("data-tech-admin", perms.techAdmin);
   var banner = dom.roleBanner;
   if (banner) {
     if (readOnly) {
       banner.hidden = false;
-      banner.textContent = role === "student"
-        ? "Режим «Ученик»: просмотр журнала и заданий без изменений"
-        : "Режим «Наблюдатель»: только отчёты и статистика";
+      banner.textContent = perms.role === "student"
+        ? "Режим «Ученик»: только домашние задания и своя посещаемость"
+        : "Режим «Наблюдатель»: полный обзор без права редактирования";
+    } else if (perms.techAdmin && perms.role !== "teacher") {
+      banner.hidden = false;
+      banner.textContent = "Тех. администрация: доступ ко всем функциям (роль — «" + DEVICE_ROLES[perms.role].label + "»)";
     } else banner.hidden = true;
   }
   // Disable every control that writes data when this device is read-only.
-  // Students and observers cannot edit the journal; only teachers and admins
-  // may rename devices or assign roles.
-  var selector = "#addStudentButton, #studentName, #hwAddButton, #hwPinButton, #hwClearButton, #hwText, #createLessonButton, [data-action='lesson-edit'], .lesson-roster-row select, .icon-button.hw-delete";
+  var selector = "#addStudentButton, #studentName, #toggleStudentEntryButton, #hwAddButton, #hwPinButton, #hwClearButton, #hwText, #createLessonButton, #lessonCreate, #addClassButton, #addSubjectButton, [data-action='lesson-edit'], [data-action='rename'], [data-action='remove'], .lesson-roster-row select, .icon-button.hw-delete, #studentCardRename, #studentCardDelete, #studentClassMove, #exportBackupButton, #importBackupButton, #restoreBackupButton";
   Array.prototype.forEach.call(document.querySelectorAll(selector), function (el) { el.disabled = readOnly; });
   Array.prototype.forEach.call(document.querySelectorAll(".device-input, .device-role"), function (el) {
-    if (el.dataset.deviceId === deviceId && role !== "student" && role !== "observer") return; // own device stays editable for teacher/admin
-    el.disabled = readOnly || (role !== "teacher" && role !== "admin");
+    if (el.dataset.deviceId === deviceId && perms.canManageDevices) return; // own row stays editable for those who manage devices
+    el.disabled = !perms.canManageDevices || el.dataset.deviceId !== deviceId ? (!perms.canManageDevices || !syncWritable()) : false;
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".device-tech-flag"), function (el) {
+    el.disabled = el.dataset.deviceId !== deviceId && !(perms.canManageDevices && syncWritable());
   });
 }
 function newer(a, b) {
@@ -264,6 +303,7 @@ function getVisibleStudents() { return state.students.filter(function (s) { retu
 function getStudentById(id) { return state.students.find(function (s) { return s.id === id; }) || null; }
 function getFilteredStudents() { var q = state.searchQuery.trim().toLocaleLowerCase("ru"); return getVisibleStudents().filter(function (s) { return !q || s.name.toLocaleLowerCase("ru").includes(q); }); }
 function addStudent() {
+  if (!effectivePermissions().canEditJournal) { showToast("Роль «" + DEVICE_ROLES[deviceRole(deviceId)].label + "»: добавление учеников недоступно", "warning"); return; }
   var name = dom.studentNameInput.value.trim().replace(/\s+/g, " ");
   if (!name) { dom.studentNameInput.focus(); showToast("Введите имя ученика", "warning"); return; }
   if (name.length > 200) { showToast("Имя должно быть короче 200 символов", "warning"); return; }
@@ -271,6 +311,7 @@ function addStudent() {
   dom.studentNameInput.value = ""; markChanged(["students/"+state.students[state.students.length-1].id]); saveLocal(); render(); scheduleSync(); dom.studentNameInput.focus(); showToast("Ученик добавлен", "success");
 }
 function renameStudent(id) {
+  if (!effectivePermissions().canEditJournal) return;
   var student = getStudentById(id); if (!student || student.deleted) return;
   var name = window.prompt("Имя ученика", student.name); if (name === null) return; name = name.trim().replace(/\s+/g, " ");
   if (!name || name.length > 200) { showToast("Введите имя длиной до 200 символов", "warning"); return; }
@@ -278,6 +319,7 @@ function renameStudent(id) {
   markChanged(["students/"+id]); saveLocal(); render(); scheduleSync();
 }
 function removeStudent(id) {
+  if (!effectivePermissions().canEditJournal) return;
   var student = getStudentById(id); if (!student || student.deleted) return;
   if (!window.confirm("Удалить ученика «" + student.name + "» из журнала? Перед удалением будет сохранена резервная копия.")) return;
   try { saveRecoveryBackup(); } catch (e) { showToast("Удаление отменено: " + e.message, "error"); return; }
@@ -317,6 +359,7 @@ function openAttendanceModal(studentId, dateKey) {
 function updateAttendanceModalOptions() { dom.attOptions.querySelectorAll(".att-option").forEach(function (btn) { var current = btn.dataset.status === attendanceModalState.currentStatus; btn.classList.toggle("current", current); btn.setAttribute("aria-pressed", String(current)); }); }
 function closeAttendanceModal() { attendanceModalState.open = false; closeModal(); }
 function setAttendanceStatus(status) {
+  if (!effectivePermissions().canEditJournal) { showToast("Роль «" + DEVICE_ROLES[deviceRole(deviceId)].label + "»: отметки недоступны", "warning"); return; }
   if (!attendanceModalState.open || !Object.prototype.hasOwnProperty.call(statusLabels, status)) return;
   var student = getStudentById(attendanceModalState.studentId); if (!student || student.deleted) { closeAttendanceModal(); return; }
   var key = student.id + "_" + attendanceModalState.dateKey;
@@ -382,7 +425,7 @@ function refreshDevPanel() {
 }
 function openDevPanel() { if (!state.devUnlocked) { openPasswordModal(); return; } refreshDevPanel(); renderMaintenance(); openModal(dom.devPanelModal, dom.devVersionTextInput); }
 function collapseDevPanel() { closeModal(); renderMaintenance(); }
-function exitDevSettings() { state.devUnlocked = false; try { if (storage) storage.removeItem(SETTINGS_UNLOCK_KEY); } catch (error) {} closeModal(); renderMaintenance(); if (dom.journalEdition) dom.journalEdition.textContent = settingsVersionText(); showToast("Вы вышли из настроек. Для возврата потребуется код доступа.", "info"); }
+function exitDevSettings() { state.devUnlocked = false; try { if (storage) storage.removeItem(SETTINGS_UNLOCK_KEY); } catch (error) {} setDeviceTechAdmin(deviceId, false); closeModal(); renderMaintenance(); if (dom.journalEdition) dom.journalEdition.textContent = settingsVersionText(); showToast("Вы вышли из настроек. Статус «Тех. администрация» снят, для возврата потребуется код доступа.", "info"); }
 // The small gray label above the site title follows the access code: while a
 // personal code is set on this device, the edition shows its installation date.
 function settingsCodeInstalled() {
@@ -414,6 +457,7 @@ function restoreData(data) {
   var previousTracked = trackedPayload; restoreProjectData(data, current, time); applyMergedToState(data); trackedPayload = previousTracked; markChanged(); saveLocal(true); render(); if (activeModal === dom.devPanelModal) refreshDevPanel(); scheduleSync();
 }
 function restoreBackup() {
+  if (!effectivePermissions().canManageDevices) { showToast("Восстановление копий доступно учителю или тех. администрации", "warning"); return; }
   try { var backups = storage && JSON.parse(storage.getItem(BACKUP_KEY) || "[]"); if (!backups || !backups.length) { showToast("Пока нет автоматических резервных копий", "warning"); return; }
     var last = backups[0], data = migrateData(last.data, true); if (!window.confirm("Восстановить журнал из копии от " + new Date(last.savedAt).toLocaleString("ru-RU") + "? Текущая версия тоже будет сохранена.")) return; saveRecoveryBackup(); restoreData(data); showToast("Журнал восстановлен", "success");
   } catch (e) { showToast("Не удалось восстановить: " + e.message, "error"); }
@@ -442,6 +486,7 @@ function wireCoreEvents() {
   dom.exportBackupButton.addEventListener("click", exportBackup); dom.importBackupButton.addEventListener("click", function () { dom.importBackupInput.click(); }); dom.restoreBackupButton.addEventListener("click", restoreBackup); dom.printButton.addEventListener("click", function () { window.print(); });
   dom.importBackupInput.addEventListener("change", async function (e) {
     var file = e.target.files[0]; if (!file) return;
+    if (!effectivePermissions().canManageDevices) { showToast("Импорт копий доступен учителю или тех. администрации", "warning"); e.target.value = ""; return; }
     try { if (file.size > 20 * 1024 * 1024) throw new Error("Файл больше 20 МБ"); var data = migrateData(JSON.parse(await file.text()), true); if (!window.confirm("Заменить журнал выбранной резервной копией? Текущая версия будет сохранена для восстановления.")) return; saveRecoveryBackup(); restoreData(data); showToast("Резервная копия загружена", "success"); }
     catch (error) { showToast("Импорт отменён: " + error.message, "error"); } finally { e.target.value = ""; }
   });
@@ -564,6 +609,13 @@ function submitSettingsCode(event) {
   closePasswordModal(); state.devUnlocked = true;
   // The unlock survives tab closures until "Выйти из настроек" is pressed.
   try { if (storage) { storage.setItem(SETTINGS_UNLOCK_KEY, "1"); storage.setItem(SETTINGS_CODE_SET_KEY, String(Date.now())); } } catch (error) {}
+  // Entering the settings password grants this device the tech-admin add-on:
+  // full access to every function regardless of the assigned base role.
+  var wasReadOnly = !effectivePermissions().canEditJournal;
+  setDeviceTechAdmin(deviceId, true);
+  // A device that was locked out (student/observer) automatically becomes a
+  // teacher on unlock — the password proves an adult is holding the device.
+  if (wasReadOnly) setDeviceRole(deviceId, "teacher");
   if (dom.journalEdition) dom.journalEdition.textContent = settingsVersionText();
   openDevPanel();
 }
@@ -696,9 +748,10 @@ function restoreProjectData(data,current,time){
 function named(type,id){var v=(state[type]||[]).find(function(x){return x.id===id;});return v?v.name:id;}
 function el(tag,text,cls){var n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;}
 function fillSelect(node,items,all){var value=node.value;node.replaceChildren();if(all)node.appendChild(new Option(all,''));items.filter(function(x){return !x.deleted;}).forEach(function(x){node.appendChild(new Option(x.name,x.id));});if(Array.from(node.options).some(function(o){return o.value===value;}))node.value=value;}
-function commitProject(keys){markChanged(keys);saveLocal();render();scheduleSync();}
-function createNamed(type){var name=window.prompt(type==='classes'?'Название класса':'Название предмета');if(name===null)return;name=name.trim();if(!name||name.length>200)return showToast('Введите название до 200 символов','warning');var existing=state[type].find(function(x){return !x.deleted&&x.name.toLowerCase()===name.toLowerCase();});if(existing)return showToast('Такое название уже есть','warning');var item={id:generateId(),name:name,updatedAt:nextTimestamp(),actor:deviceId,deleted:false};state[type].push(item);if(type==='classes')state.selectedClass=item.id;commitProject([type+'/'+item.id]);if(type==='subjects'&&dom.lessonSubject)dom.lessonSubject.value=item.id;}
+function commitProject(keys){if(!effectivePermissions().canEditJournal){showToast('Роль «'+DEVICE_ROLES[deviceRole(deviceId)].label+'»: изменения недоступны','warning');return;}markChanged(keys);saveLocal();render();scheduleSync();}
+function createNamed(type){if(!effectivePermissions().canEditJournal)return showToast('Роль «'+DEVICE_ROLES[deviceRole(deviceId)].label+'»: добавление недоступно','warning');var name=window.prompt(type==='classes'?'Название класса':'Название предмета');if(name===null)return;name=name.trim();if(!name||name.length>200)return showToast('Введите название до 200 символов','warning');var existing=state[type].find(function(x){return !x.deleted&&x.name.toLowerCase()===name.toLowerCase();});if(existing)return showToast('Такое название уже есть','warning');var item={id:generateId(),name:name,updatedAt:nextTimestamp(),actor:deviceId,deleted:false};state[type].push(item);if(type==='classes')state.selectedClass=item.id;commitProject([type+'/'+item.id]);if(type==='subjects'&&dom.lessonSubject)dom.lessonSubject.value=item.id;}
 function createLesson(){
+  if(!effectivePermissions().canEditJournal)return showToast('Роль «'+DEVICE_ROLES[deviceRole(deviceId)].label+'»: занятия недоступны','warning');
   var date=dom.lessonDate.value,subject=dom.lessonSubject.value,end=dom.lessonEnd.value,status=dom.lessonStatus.value;
   if(!validDate(date)||!subject||!/^([01]\d|2[0-3]):[0-5]\d$/.test(end))return showToast('Укажите дату, предмет и время окончания','warning');
   var roster=getVisibleStudents().map(function(s){return s.id;}).sort();if(!roster.length)return showToast('Сначала добавьте учеников в выбранный класс','warning');
@@ -755,6 +808,8 @@ function wireProjectEvents(){
   if(dom.syncDeviceList)dom.syncDeviceList.addEventListener('change',function(event){
     var roleSelect=event.target.closest('.device-role');
     if(roleSelect&&roleSelect.dataset.deviceId){setDeviceRole(roleSelect.dataset.deviceId,roleSelect.value);return;}
+    var techFlag=event.target.closest('.device-tech-flag');
+    if(techFlag&&techFlag.dataset.deviceId){setDeviceTechAdmin(techFlag.dataset.deviceId,!deviceTechAdmin(techFlag.dataset.deviceId));return;}
     var input=event.target.closest('.device-input');if(!input||!input.dataset.deviceId)return;
     var id=input.dataset.deviceId,name=(input.value||'').trim().slice(0,40);
     var meta=state.deviceMeta||(state.deviceMeta={});var entry=meta[id]||(meta[id]={seenAt:0});
@@ -977,7 +1032,12 @@ function syncEqual(a, b) { return syncStable(a) === syncStable(b); }
 function syncConfigured() { return Boolean(syncConfig.enabled && syncConfig.gistId); }
 // A connection without a token is read-only: the journal can be viewed and
 // polled from a public Gist, but local edits never leave the device.
-function syncReadOnly() { return syncConfigured() && !syncConfig.token; }
+function syncReadOnly() {
+  // Role gate first: student/observer devices cannot write anything unless the
+  // tech-admin add-on is active. Token-less public-Gist connections stay
+  // view-only for remote data but still allow local edits for teachers.
+  return !effectivePermissions().canEditJournal;
+}
 function syncWritable() { return syncConfigured() && Boolean(syncConfig.token); }
 function syncAutomatic() { return syncWritable() && syncRuntime.pollIntervalMs > 0; }
 function syncOnline() { return typeof navigator === "undefined" || navigator.onLine !== false; }
@@ -1451,12 +1511,11 @@ function formatSeenAgo(seenAt) {
 function renderDeviceList() {
   var container = dom.syncDeviceList;
   if (!container) return;
-  if (!syncConfigured()) {
-    container.innerHTML = '<p class="help-text">Подключите Gist в разделе «Синхронизация», чтобы увидеть список устройств.</p>';
-    return;
-  }
+  // The current device is always listed (roles and the tech-admin add-on are
+  // managed locally even before a Gist connection exists). Other devices only
+  // appear once sync is configured.
   var meta = state.deviceMeta || {};
-  var ids = Object.keys(meta);
+  var ids = syncConfigured() ? Object.keys(meta) : [];
   if (deviceId && ids.indexOf(deviceId) === -1) ids.push(deviceId);
   if (!ids.length) {
     container.innerHTML = '<p class="help-text">Пока ни одно устройство не отправляло данные в этот Gist. Отправьте изменения — устройство появится в списке.</p>';
@@ -1499,6 +1558,21 @@ function renderDeviceList() {
     if (id !== deviceId && !syncWritable()) roleSelect.disabled = true;
     roleSelect.title = id === deviceId ? "Ваша роль на этом устройстве" : "Назначить роль этому устройству (нужен токен для отправки)";
     row.appendChild(roleSelect);
+    // Tech-admin add-on chip: shown next to the base role for every device that
+    // was granted it via the settings password. Clicking toggles it (own device
+    // always; other devices require manage rights + write connection).
+    var flag = document.createElement("button");
+    flag.type = "button";
+    flag.className = "device-tech-flag" + (entry.techAdmin ? " is-active" : "");
+    flag.dataset.deviceId = id;
+    flag.textContent = entry.techAdmin ? "🛡 Тех. адм." : "Тех. адм.";
+    flag.setAttribute("aria-pressed", String(Boolean(entry.techAdmin)));
+    flag.setAttribute("aria-label", "Статус тех. администрации: " + (entry.name || id.slice(0, 4)));
+    flag.title = entry.techAdmin
+      ? "Доступ ко всем функциям выдан (введите пароль настроек на этом устройстве, чтобы снять)"
+      : "Выдать доступ ко всем функциям (можно только на самом устройстве — через пароль настроек)";
+    if (id !== deviceId) flag.disabled = true;
+    row.appendChild(flag);
     container.appendChild(row);
   });
   applyRoleRestrictions();
