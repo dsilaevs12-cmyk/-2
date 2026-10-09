@@ -10,6 +10,8 @@ var SETTINGS_UNLOCK_KEY = "attendance_settings_unlocked";
 var SETTINGS_CODE_SET_KEY = "attendance_settings_code_set";
 var BACKUP_KEY = "attendance_recovery_backups";
 var NEWS_DISMISS_KEY = "attendance_news_dismissed";
+var AUTH_ACCOUNTS_KEY = "attendance_auth_accounts";
+var AUTH_SESSION_KEY = "attendance_auth_session";
 var DEFAULT_VERSION_TEXT = "версия: 3.3";
 var DEFAULT_MAINTENANCE_MSG = "Журнал временно на обслуживании. Попробуйте вернуться позже.";
 var STATUS_PRESENT = "present", STATUS_ABSENT = "absent", STATUS_LATE = "late", STATUS_UNMARKED = "unmarked";
@@ -295,6 +297,211 @@ function saveRecoveryBackup() {
   entries.unshift({ savedAt: Date.now(), data: buildPayload() }); storage.setItem(BACKUP_KEY, JSON.stringify(entries.slice(0, 3))); return true;
 }
 function showToast(msg, type) { dom.toast.textContent = msg; dom.toast.className = "toast show " + (type || ""); clearTimeout(showToast.timer); showToast.timer = setTimeout(function () { dom.toast.className = "toast"; }, 4500); }
+
+/* ---------- Authentication gate (register / login with 2FA) ---------- */
+// On the very first opening of a device the journal is locked behind a full
+// screen requiring registration (first name, last name, password) or login.
+// Login additionally requires two-factor confirmation: either an SMS-style
+// code sent to the registered phone number or a secret word (second password).
+// Accounts are stored locally on the device with PBKDF2-hashed passwords via
+// WebCrypto (SHA-256, 150k iterations, per-account random salt). Without a
+// real SMS provider the 6-digit code is generated locally and shown as a
+// demo hint — the verification flow itself is fully enforced.
+var authGateState = { pending: null, smsCode: "", smsExpiresAt: 0 };
+
+function authNormalizeName(value) { return String(value || "").trim().replace(/\s+/g, " ").toLowerCase(); }
+function loadAuthAccounts() {
+  try { var raw = storage && storage.getItem(AUTH_ACCOUNTS_KEY); var list = raw ? JSON.parse(raw) : []; return Array.isArray(list) ? list : []; }
+  catch (error) { return []; }
+}
+function saveAuthAccounts(list) {
+  if (!storage) throw new Error("Хранилище недоступно — не удалось сохранить аккаунт");
+  storage.setItem(AUTH_ACCOUNTS_KEY, JSON.stringify(list));
+}
+function currentAuthSession() {
+  try { var raw = storage && storage.getItem(AUTH_SESSION_KEY); var s = raw ? JSON.parse(raw) : null; return s && typeof s.fullName === "string" ? s : null; }
+  catch (error) { return null; }
+}
+function saveAuthSession(session) { try { if (storage) storage.setItem(AUTH_SESSION_KEY, JSON.stringify(session)); } catch (error) {} }
+function clearAuthSession() { try { if (storage) storage.removeItem(AUTH_SESSION_KEY); } catch (error) {} }
+function isDeviceAuthenticated() { return Boolean(currentAuthSession()); }
+function authRandomHex(bytes) {
+  var arr = new Uint8Array(bytes);
+  if (typeof crypto !== "undefined" && crypto.getRandomValues) crypto.getRandomValues(arr);
+  else for (var i = 0; i < bytes; i++) arr[i] = Math.floor(Math.random() * 256);
+  return Array.prototype.map.call(arr, function (b) { return b.toString(16).padStart(2, "0"); }).join("");
+}
+function authToHex(buffer) {
+  return Array.prototype.map.call(new Uint8Array(buffer), function (b) { return b.toString(16).padStart(2, "0"); }).join("");
+}
+function authDerive(password, saltHex) {
+  // PBKDF2-SHA256 when WebCrypto is available; deterministic fallback keeps
+  // the app usable in rare contexts without crypto.subtle (e.g. file:// in
+  // some browsers). The fallback is clearly marked so it can be upgraded.
+  var salt = [];
+  for (var i = 0; i < saltHex.length; i += 2) salt.push(parseInt(saltHex.substr(i, 2), 16));
+  if (typeof crypto !== "undefined" && crypto.subtle && typeof TextEncoder !== "undefined") {
+    var enc = new TextEncoder();
+    return crypto.subtle.importKey("raw", enc.encode(String(password)), "PBKDF2", false, ["deriveBits"])
+      .then(function (key) { return crypto.subtle.deriveBits({ name: "PBKDF2", salt: new Uint8Array(salt), iterations: 150000, hash: "SHA-256" }, key, 256); })
+      .then(function (bits) { return "pbkdf2$" + authToHex(bits); });
+  }
+  return Promise.resolve("simple$" + authSimpleHash(String(password) + "$" + saltHex));
+}
+function authSimpleHash(text) {
+  // FNV-1a chained rounds — only used when WebCrypto is unavailable.
+  var h1 = 0x811c9dc5, h2 = 0x01000193;
+  for (var round = 0; round < 2000; round++) {
+    for (var i = 0; i < text.length; i++) {
+      h1 ^= text.charCodeAt(i) + round; h1 = Math.imul(h1, 0x01000193);
+      h2 = Math.imul(h2 ^ (text.charCodeAt(i) ^ round), 0x85ebca6b);
+    }
+  }
+  return (h1 >>> 0).toString(16) + (h2 >>> 0).toString(16);
+}
+function authGenerateSmsCode() {
+  var n = 0;
+  if (typeof crypto !== "undefined" && crypto.getRandomValues) { var a = new Uint32Array(1); crypto.getRandomValues(a); n = a[0]; }
+  else n = Math.floor(Math.random() * 0xffffffff);
+  return String(100000 + (n % 900000));
+}
+function wireAuthGate() {
+  var d = dom;
+  if (!d.authGate) return;
+  d.authTabRegister.addEventListener("click", function () { switchAuthTab("register"); });
+  d.authTabLogin.addEventListener("click", function () { switchAuthTab("login"); });
+  d.authRegisterForm.addEventListener("submit", function (event) { event.preventDefault(); handleAuthRegister(); });
+  d.authLoginForm.addEventListener("submit", function (event) { event.preventDefault(); handleAuthLogin(event); });
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="auth2faMethod"]'), function (radio) {
+    radio.addEventListener("change", updateAuth2faStep);
+  });
+  [d.authRegFirst, d.authRegLast, d.authRegPass1, d.authRegPass2].forEach(function (el) { el.addEventListener("input", function () { d.authRegisterError.textContent = ""; }); });
+  [d.authLoginName, d.authLoginPass, d.authPhone, d.authSmsCode, d.authSecretWord].forEach(function (el) { el.addEventListener("input", function () { d.authLoginError.textContent = ""; }); });
+}
+function switchAuthTab(tab) {
+  var register = tab === "register";
+  dom.authTabRegister.classList.toggle("is-active", register);
+  dom.authTabLogin.classList.toggle("is-active", !register);
+  dom.authTabRegister.setAttribute("aria-selected", String(register));
+  dom.authTabLogin.setAttribute("aria-selected", String(!register));
+  dom.authRegisterForm.hidden = !register;
+  dom.authLoginForm.hidden = register;
+  dom.authRegisterError.textContent = ""; dom.authLoginError.textContent = "";
+  var first = register ? dom.authRegFirst : dom.authLoginName; if (first) first.focus();
+}
+function openAuthGate(preferredTab) {
+  if (!dom.authGate) return;
+  dom.authGate.hidden = false;
+  if (dom.journalApp) dom.journalApp.inert = true;
+  document.body.style.overflow = "hidden";
+  dom.authFootnote.textContent = "";
+  switchAuthTab(preferredTab || (loadAuthAccounts().length ? "login" : "register"));
+}
+function closeAuthGate() {
+  if (!dom.authGate) return;
+  dom.authGate.hidden = true;
+  if (dom.journalApp) dom.journalApp.inert = !!activeModal || shouldShowMaintenance();
+  document.body.style.overflow = activeModal ? "hidden" : "";
+  authGateState.pending = null; authGateState.smsCode = ""; authGateState.smsExpiresAt = 0;
+}
+async function handleAuthRegister() {
+  var d = dom;
+  var first = d.authRegFirst.value.trim(), last = d.authRegLast.value.trim();
+  var pass1 = d.authRegPass1.value, pass2 = d.authRegPass2.value;
+  if (!first || !last) { d.authRegisterError.textContent = "Укажите имя и фамилию."; return; }
+  if (first.length > 60 || last.length > 60) { d.authRegisterError.textContent = "Имя или фамилия слишком длинные."; return; }
+  if (pass1.length < 6) { d.authRegisterError.textContent = "Пароль должен быть не короче 6 символов."; return; }
+  if (pass1 !== pass2) { d.authRegisterError.textContent = "Пароли не совпадают."; return; }
+  var accounts = loadAuthAccounts();
+  var fullName = first + " " + last;
+  if (accounts.some(function (a) { return authNormalizeName(a.fullName) === authNormalizeName(fullName); })) {
+    d.authRegisterError.textContent = "Аккаунт с таким именем и фамилией уже есть — войдите вместо регистрации.";
+    switchAuthTab("login"); d.authLoginName.value = fullName; return;
+  }
+  d.authRegisterSubmit.disabled = true; d.authRegisterSubmit.textContent = "Проверяем…";
+  try {
+    var salt = authRandomHex(16);
+    var derived = await authDerive(pass1, salt);
+    accounts.push({ id: generateId(), fullName: fullName, firstName: first, lastName: last, salt: salt, hash: derived, createdAt: Date.now() });
+    saveAuthAccounts(accounts);
+    saveAuthSession({ accountId: accounts[accounts.length - 1].id, fullName: fullName, method: "register", at: Date.now() });
+    d.authRegisterForm.reset();
+    closeAuthGate(); render();
+    showToast("Аккаунт создан. Добро пожаловать, " + first + "!", "success");
+  } catch (error) {
+    d.authRegisterError.textContent = error.message || "Не удалось создать аккаунт.";
+  } finally {
+    d.authRegisterSubmit.disabled = false; d.authRegisterSubmit.textContent = "Зарегистрироваться";
+  }
+}
+async function handleAuthLogin(event) {
+  var d = dom;
+  var name = d.authLoginName.value.trim(), pass = d.authLoginPass.value;
+  if (!name || !pass) { d.authLoginError.textContent = "Введите имя с фамилией и пароль."; return; }
+  var methodEl = document.querySelector('input[name="auth2faMethod"]:checked');
+  var method = methodEl ? methodEl.value : "code";
+  var accounts = loadAuthAccounts();
+  var account = null;
+  for (var i = 0; i < accounts.length; i++) { if (authNormalizeName(accounts[i].fullName) === authNormalizeName(name)) { account = accounts[i]; break; } }
+  if (!account) { d.authLoginError.textContent = "Аккаунт не найден. Зарегистрируйтесь на этом устройстве."; switchAuthTab("register"); d.authRegLast.value = name.split(" ").slice(1).join(" "); d.authRegFirst.value = name.split(" ")[0] || ""; return; }
+  // Step 1: verify the main password.
+  if (!authGateState.pending || authGateState.pending.accountId !== account.id || authGateState.pending.step !== "2fa") {
+    d.authLoginSubmit.disabled = true; d.authLoginSubmit.textContent = "Проверяем…";
+    try {
+      var derived = await authDerive(pass, account.salt);
+      if (derived !== account.hash) { d.authLoginError.textContent = "Неверный пароль."; d.authLoginPass.value = ""; d.authLoginPass.focus(); return; }
+    } catch (error) { d.authLoginError.textContent = error.message || "Ошибка проверки пароля."; return; }
+    finally { d.authLoginSubmit.disabled = false; d.authLoginSubmit.textContent = "Войти"; }
+    // Password OK → move to the second factor.
+    authGateState.pending = { accountId: account.id, fullName: account.fullName, step: "2fa", method: null };
+    if (method === "code") {
+      var code = authGenerateSmsCode();
+      authGateState.smsCode = code; authGateState.smsExpiresAt = Date.now() + 5 * 60 * 1000;
+      d.authSmsHint.textContent = "Демо-режим без SMS-провайдера: код для телефона " + (d.authPhone.value.trim() || "не указан") + " — " + code + " (действует 5 минут).";
+      d.authSmsRow.hidden = false; d.authSmsCode.value = ""; d.authSmsCode.focus();
+      d.authLoginError.textContent = "Пароль принят. Подтвердите вход кодом из сообщения.";
+    } else {
+      d.authSecretWord.value = ""; d.authSecretWord.focus();
+      d.authLoginError.textContent = "Пароль принят. Введите секретное слово.";
+    }
+    return;
+  }
+  // Step 2: verify the second factor.
+  if (method === "code") {
+    var entered = d.authSmsCode.value.trim();
+    if (!/^\d{6}$/.test(entered)) { d.authLoginError.textContent = "Код состоит из 6 цифр."; return; }
+    if (Date.now() > authGateState.smsExpiresAt) { d.authLoginError.textContent = "Код истёк. Нажмите «Войти» ещё раз, чтобы получить новый."; authGateState.pending = null; return; }
+    if (entered !== authGateState.smsCode) { d.authLoginError.textContent = "Неверный код подтверждения."; d.authSmsCode.value = ""; return; }
+  } else {
+    var secret = d.authSecretWord.value;
+    if (!secret) { d.authLoginError.textContent = "Введите секретное слово."; return; }
+    var secretDerived = await authDerive(secret, account.salt);
+    if (account.secretHash && secretDerived !== account.secretHash) { d.authLoginError.textContent = "Неверное секретное слово."; d.authSecretWord.value = ""; return; }
+    if (!account.secretHash) {
+      // First login with secret-word 2FA: enrol the secret now (after the main
+      // password was already verified above).
+      account.secretHash = secretDerived;
+      var list = loadAuthAccounts();
+      for (var j = 0; j < list.length; j++) { if (list[j].id === account.id) list[j] = account; }
+      saveAuthAccounts(list);
+    }
+  }
+  saveAuthSession({ accountId: account.id, fullName: account.fullName, method: method, at: Date.now() });
+  authGateState.pending = null;
+  d.authLoginForm.reset(); updateAuth2faStep();
+  closeAuthGate(); render();
+  showToast("С возвращением, " + account.fullName + "! Вход подтверждён.", "success");
+}
+function updateAuth2faStep() {
+  var el = document.querySelector('input[name="auth2faMethod"]:checked');
+  var method = el ? el.value : "code";
+  Array.prototype.forEach.call(document.querySelectorAll(".auth-2fa-step"), function (step) {
+    step.hidden = step.dataset.method !== method;
+  });
+  if (method !== "code") { dom.authSmsRow.hidden = true; authGateState.pending = null; }
+  else if (!authGateState.pending || authGateState.pending.step !== "2fa") dom.authSmsRow.hidden = true;
+}
+
 function updateSettings(patch) {
   var time = nextTimestamp(); settingFields.forEach(function (field) { if (Object.prototype.hasOwnProperty.call(patch, field)) { state.settings[field] = patch[field]; state.settings.fieldMeta[field] = { updatedAt: time, actor: deviceId }; } });
   state.settings.updatedAt = time; markChanged(Object.keys(patch).map(function(f){return "settings/"+f;})); saveLocal(); render(); scheduleSync();
@@ -422,6 +629,12 @@ function refreshDevPanel() {
   dom.devToggleMaintenanceButton.textContent = state.settings.maintenance ? "Завершить обслуживание" : "Включить экран обслуживания";
   dom.devToggleMaintenanceButton.className = state.settings.maintenance ? "danger" : "secondary";
   renderDeviceList();
+  // Account section: show who is logged in on this device.
+  var session = currentAuthSession();
+  if (dom.authAccountInfo) dom.authAccountInfo.textContent = session
+    ? "Вошёл: " + session.fullName + " · вход через «" + (session.method === "register" ? "регистрацию" : session.method === "secret" ? "секретное слово" : "код из SMS") + "». Данные аккаунта хранятся только на этом устройстве."
+    : "Устройство не авторизовано.";
+  if (dom.authLogoutButton) dom.authLogoutButton.disabled = !session;
 }
 function openDevPanel() { if (!state.devUnlocked) { openPasswordModal(); return; } refreshDevPanel(); renderMaintenance(); openModal(dom.devPanelModal, dom.devVersionTextInput); }
 function collapseDevPanel() { closeModal(); renderMaintenance(); }
@@ -520,6 +733,19 @@ function init() {
   try { if (!state.devUnlocked && storage && storage.getItem(SETTINGS_UNLOCK_KEY) === "1") state.devUnlocked = true; } catch (error) {}
   if (!storage) updateLocalStatus("Только в этой вкладке", true);
   loadViewPreference(); dom.intervalSelect.value = String(syncRuntime.pollIntervalMs); wireCoreEvents(); wireViewEvents(); wireProjectEvents(); wireAppUpdates(); updateSyncUI(); render(); applyRoleRestrictions();
+  // Authentication gate: the very first opening of a device must show the
+  // forced register/login screen. Only after a successful login (with 2FA)
+  // or registration does the journal unlock for this device.
+  wireAuthGate();
+  ["authLogoutButton", "authAccountInfo"].forEach(function (id) { dom[id] = document.getElementById(id); });
+  if (dom.authLogoutButton) dom.authLogoutButton.addEventListener("click", function () {
+    if (!confirm("Выйти из аккаунта на этом устройстве? Журнал снова потребует входа или регистрации.")) return;
+    clearAuthSession(); state.devUnlocked = false;
+    try { if (storage) storage.removeItem(SETTINGS_UNLOCK_KEY); } catch (error) {}
+    setDeviceTechAdmin(deviceId, false); closeModal(); renderMaintenance(); openAuthGate(loadAuthAccounts().length ? "login" : "register");
+    showToast("Вы вышли из аккаунта. Для продолжения нужен вход.", "info");
+  });
+  if (!isDeviceAuthenticated()) { openAuthGate(loadAuthAccounts().length ? "login" : "register"); return; }
   // Read-only connection: a Gist ID without a token still downloads a public journal.
   if (syncReadOnly()) { fullSync("auto"); }
   if (syncWritable() && syncRuntime.pollIntervalMs > 0) { fullSync("auto"); startPolling(); }
@@ -821,6 +1047,8 @@ function wireProjectEvents(){
 }
 
 ["hwPanel","hwDueDate","hwClassName","hwText","hwPinButton","hwClearButton","hwAddButton","hwHistory","syncDeviceList","refreshDeviceListButton","roleBanner"].forEach(function(id){dom[id]=document.getElementById(id);});
+["authGate","authTitle","authSubtitle","authTabRegister","authTabLogin","authRegisterForm","authLoginForm","authRegFirst","authRegLast","authRegPass1","authRegPass2","authRegisterError","authRegisterSubmit","authLoginName","authLoginPass","authPhone","authSmsRow","authSmsCode","authSmsHint","authSecretWord","authLoginError","authLoginSubmit","authFootnote"].forEach(function(id){dom[id]=document.getElementById(id);});
+if (dom.authSmsRow === undefined || dom.authSmsRow === null) { var smsEl = document.querySelector(".auth-sms-row"); if (smsEl) dom.authSmsRow = smsEl; }
 
 /* Homework: unlimited entries pinned per class. Each entry is an item of the
  * synced "homework" list (id/classId/date/text), so a class can hold any number
