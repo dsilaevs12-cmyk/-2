@@ -15,8 +15,8 @@ var AUTH_SESSION_KEY = "attendance_auth_session";
 var DEFAULT_VERSION_TEXT = "версия: 3.3";
 var DEFAULT_MAINTENANCE_MSG = "Журнал временно на обслуживании. Попробуйте вернуться позже.";
 var STATUS_PRESENT = "present", STATUS_ABSENT = "absent", STATUS_LATE = "late", STATUS_UNMARKED = "unmarked";
-var statusLabels = { present: "Присутствует", absent: "Отсутствует", late: "Опоздал", unmarked: "Не отмечено" };
-var statusSymbols = { present: "✓", absent: "Н", late: "О", unmarked: "·" };
+var statusLabels = { present: "Присутствует", absent: "Отсутствует", late: "Онлайн", unmarked: "Не отмечено" };
+var statusSymbols = { present: "✓", absent: "Н", late: "О", unmarked: "·" }; // символ «О» сохранён для совместимости с историческими отметками типа late
 var settingFields = ["maintenance", "maintenanceMessage", "maintenanceBy", "news", "versionText"];
 var monthNames = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
 var weekdayNames = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
@@ -677,7 +677,7 @@ function tableSignature(data, days) {
 function setCellStatus(btn, student, day, status) {
   btn.className = "attendance-button " + status;
   if (state.viewMode === "day") {
-    var labels = { present: "\u0411\u044b\u043b", absent: "\u041d\u0435\u0442", late: "\u041e\u043f\u043e\u0437\u0434\u0430\u043b", unmarked: "\u041e\u0442\u043c\u0435\u0442\u0438\u0442\u044c" };
+    var labels = { present: "\u0411\u044b\u043b", absent: "\u041d\u0435\u0442", late: "\u041e\u043d\u043b\u0430\u0439\u043d", unmarked: "\u041e\u0442\u043c\u0435\u0442\u0438\u0442\u044c" };
     btn.replaceChildren(element("span", "day-status-icon", statusSymbols[status]), element("span", "day-status-label", labels[status]));
   } else {
     btn.textContent = statusSymbols[status];
@@ -982,6 +982,7 @@ function refreshDevPanel() {
   dom.devToggleMaintenanceButton.className = state.settings.maintenance ? "danger" : "secondary";
   renderDeviceList();
   renderUserList();
+  renderClassList();
   // Account section: show who is logged in on this device.
   var session = currentAuthSession();
   if (dom.authAccountInfo) dom.authAccountInfo.textContent = session
@@ -1082,6 +1083,12 @@ function wireCoreEvents() {
     var btn = e.target.closest(".user-remove");
     if (!btn || !dom.userList.contains(btn)) return;
     removeAuthAccount(btn.dataset.accountId);
+  });
+  if (dom.refreshClassListButton) dom.refreshClassListButton.addEventListener("click", function () { renderClassList(); showToast("Список классов обновлён", "info"); });
+  if (dom.classList) dom.classList.addEventListener("click", function (e) {
+    var btn = e.target.closest(".class-remove");
+    if (!btn || !dom.classList.contains(btn)) return;
+    removeClass(btn.dataset.classId);
   });
   dom.newsCloseButton.addEventListener("click", function () { try { if (storage) storage.setItem(NEWS_DISMISS_KEY, state.settings.news.trim()); } catch (e) {} dom.newsBanner.classList.remove("visible"); });
   dom.exportBackupButton.addEventListener("click", exportBackup); dom.importBackupButton.addEventListener("click", function () { dom.importBackupInput.click(); }); dom.restoreBackupButton.addEventListener("click", restoreBackup); dom.printButton.addEventListener("click", function () { window.print(); });
@@ -1278,7 +1285,7 @@ function renderStudentCard() {
     button.appendChild(element("span", "card-day-number", day.getDate())); button.appendChild(element("span", "card-day-status", statusSymbols[status])); fragment.appendChild(button);
   });
   dom.studentCardDays.replaceChildren(fragment);
-  var stats = document.createDocumentFragment(); [["present", "Присутствия"], ["absent", "Пропуски"], ["late", "Опоздания"]].forEach(function (item) { var card = element("div", "card-stat " + item[0]); card.appendChild(element("strong", "", counts[item[0]])); card.appendChild(element("span", "", item[1])); stats.appendChild(card); }); dom.studentCardStats.replaceChildren(stats);
+  var stats = document.createDocumentFragment(); [["present", "Присутствия"], ["absent", "Пропуски"], ["late", "Онлайн"]].forEach(function (item) { var card = element("div", "card-stat " + item[0]); card.appendChild(element("strong", "", counts[item[0]])); card.appendChild(element("span", "", item[1])); stats.appendChild(card); }); dom.studentCardStats.replaceChildren(stats);
 }
 function wireViewEvents() {
   var navigation=document.getElementById("glassNavigation");
@@ -1320,7 +1327,7 @@ function setStudentEntryOpen(open){
 /* Schema 5: lesson rosters are snapshots; daily legacy marks stay independent. */
 var projectLists = ['classes', 'subjects', 'lessons'];
 var homeworkListKey = 'homework'; // separate synced list: unlimited homework entries per class
-var projectDomIds = ['classPicker','addClassButton','reportsButton','lessonsPanel','lessonDate','lessonSubject','lessonEnd','lessonStatus','lessonCreate','addSubjectButton','lessonList','lessonModal','lessonTitle','lessonRoster','lessonClose','lessonState','lessonDelete','studentClassPicker','studentClassMove'];
+var projectDomIds = ['classList','refreshClassListButton','classPicker','addClassButton','reportsButton','lessonsPanel','lessonDate','lessonSubject','lessonEnd','lessonStatus','lessonCreate','addSubjectButton','lessonList','lessonModal','lessonTitle','lessonRoster','lessonClose','lessonState','lessonDelete','studentClassPicker','studentClassMove'];
 projectDomIds.forEach(function(id) { dom[id] = document.getElementById(id); });
 state.settings = cloneSettings(state.settings);
 state.classes = [{ id: 'class-main', name: 'Основной класс', updatedAt: 0, actor: '', deleted: false }];
@@ -1384,6 +1391,68 @@ function el(tag,text,cls){var n=document.createElement(tag);if(text!==undefined)
 function fillSelect(node,items,all){var value=node.value;node.replaceChildren();if(all)node.appendChild(new Option(all,''));items.filter(function(x){return !x.deleted;}).forEach(function(x){node.appendChild(new Option(x.name,x.id));});if(Array.from(node.options).some(function(o){return o.value===value;}))node.value=value;}
 function commitProject(keys){if(!effectivePermissions().canEditJournal){showToast('Роль «'+DEVICE_ROLES[deviceRole(deviceId)].label+'»: изменения недоступны','warning');return;}markChanged(keys);scheduleSaveLocal();render();scheduleSync();}
 function createNamed(type){if(!effectivePermissions().canEditJournal)return showToast('Роль «'+DEVICE_ROLES[deviceRole(deviceId)].label+'»: добавление недоступно','warning');var name=window.prompt(type==='classes'?'Название класса':'Название предмета');if(name===null)return;name=name.trim();if(!name||name.length>200)return showToast('Введите название до 200 символов','warning');var existing=state[type].find(function(x){return !x.deleted&&x.name.toLowerCase()===name.toLowerCase();});if(existing)return showToast('Такое название уже есть','warning');var item={id:generateId(),name:name,updatedAt:nextTimestamp(),actor:deviceId,deleted:false};state[type].push(item);if(type==='classes')state.selectedClass=item.id;commitProject([type+'/'+item.id]);if(type==='subjects'&&dom.lessonSubject)dom.lessonSubject.value=item.id;}
+/* ---------- Class management in the settings panel ---------- */
+// Deleting a class soft-deletes it (tombstone) so the change merges across all
+// synced devices like any other record. Its students, lessons and homework are
+// removed together with the class; attendance history stays inside the recovery
+// backup saved right before the deletion. Allowed for teacher and tech admin
+// (effectivePermissions().canEditJournal). The default 'class-main' cannot be
+// deleted — it always exists as a fallback container for records.
+function liveClassStats(id){
+  var students=(state.students||[]).filter(function(s){return !s.deleted&&(s.classId||'class-main')===id;}).length;
+  var lessons=(state.lessons||[]).filter(function(l){return !l.deleted&&l.classId===id;}).length;
+  var hw=(state.homework||[]).filter(function(h){return !h.deleted&&h.classId===id;}).length;
+  return {students:students,lessons:lessons,hw:hw};
+}
+function renderClassList(){
+  var container=dom.classList; if(!container)return;
+  var classes=(state.classes||[]).filter(function(c){return !c.deleted;}).sort(function(a,b){return a.name.localeCompare(b.name,'ru');});
+  var canManage=effectivePermissions().canEditJournal;
+  if(!classes.length){container.innerHTML='<p class="help-text">Список классов пуст.</p>';return;}
+  container.textContent='';
+  classes.forEach(function(cls){
+    var row=document.createElement('div'); row.className='device-row class-row';
+    var info=document.createElement('div');
+    var name=document.createElement('span'); name.className='device-name'; name.textContent=cls.name; info.appendChild(name);
+    if(cls.id==='class-main'){var badge=document.createElement('span');badge.className='device-badge';badge.textContent='базовый';info.appendChild(badge);}
+    if((state.selectedClass||'class-main')===cls.id){var cur=document.createElement('span');cur.className='device-badge';cur.textContent='открыт';info.appendChild(cur);}
+    var stats=liveClassStats(cls.id);
+    var meta=document.createElement('span'); meta.className='device-seen';
+    meta.textContent='Учеников: '+stats.students+' · занятий: '+stats.lessons+' · заданий: '+stats.hw;
+    row.appendChild(info); row.appendChild(meta);
+    var remove=document.createElement('button'); remove.type='button'; remove.className='danger class-remove';
+    remove.dataset.classId=cls.id; remove.textContent='Удалить класс';
+    remove.disabled=!canManage||cls.id==='class-main';
+    remove.title=cls.id==='class-main'?'Базовый класс «'+cls.name+'» нельзя удалить':(canManage?'Удалить класс вместе с учениками, занятиями и заданиями':'Удалять классы могут только учитель или тех. администрация');
+    row.appendChild(remove);
+    container.appendChild(row);
+  });
+}
+function removeClass(id){
+  var perms=effectivePermissions();
+  if(!perms.canEditJournal){showToast('Удаление классов доступно учителю или тех. администрации','warning');return false;}
+  if(id==='class-main'){showToast('Базовый класс «Основной класс» удалить нельзя','warning');return false;}
+  var cls=(state.classes||[]).find(function(c){return c.id===id;});
+  if(!cls||cls.deleted){showToast('Класс не найден — обновите список','warning');renderClassList();return false;}
+  var stats=liveClassStats(id);
+  var warning='Удалить класс «'+cls.name+'»?\nВместе с классом будут удалены: ученики ('+stats.students+'), занятия ('+stats.lessons+'), домашние задания ('+stats.hw+').\nПеред удалением будет сохранена резервная копия.';
+  if(!window.confirm(warning))return false;
+  // Second confirmation typed manually — deletion affects many records.
+  var word=window.prompt('Необратимое действие (отменить можно только восстановлением копии).\nДля подтверждения введите название класса точно:\n'+cls.name);
+  if(word===null){showToast('Удаление отменено','info');return false;}
+  if(word.trim().toLowerCase()!==cls.name.trim().toLowerCase()){showToast('Название не совпало — удаление отменено','info');return false;}
+  try{saveRecoveryBackup();}catch(e){showToast('Удаление отменено: '+e.message,'error');return false;}
+  var time=nextTimestamp(),keys=[];
+  cls.deleted=true;cls.updatedAt=time;cls.actor=deviceId;keys.push('classes/'+cls.id);
+  (state.students||[]).forEach(function(st){if(!st.deleted&&(st.classId||'class-main')===id){st.deleted=true;st.updatedAt=time;st.actor=deviceId;keys.push('students/'+st.id);}});
+  (state.lessons||[]).forEach(function(l){if(!l.deleted&&l.classId===id){l.deleted=true;l.updatedAt=time;l.actor=deviceId;keys.push('lessons/'+l.id);}});
+  (state.homework||[]).forEach(function(h){if(!h.deleted&&h.classId===id){h.deleted=true;h.updatedAt=time;h.actor=deviceId;keys.push(homeworkListKey+'/'+h.id);}});
+  if(state.selectedClass===id)state.selectedClass='class-main';
+  commitProject(keys);
+  if(activeModal===dom.devPanelModal)renderClassList();
+  showToast('Класс «'+cls.name+'» удалён. Доступно восстановление из копии.','success');
+  return true;
+}
 function createLesson(){
   if(!effectivePermissions().canEditJournal)return showToast('Роль «'+DEVICE_ROLES[deviceRole(deviceId)].label+'»: занятия недоступны','warning');
   var date=dom.lessonDate.value,subject=dom.lessonSubject.value,end=dom.lessonEnd.value,status=dom.lessonStatus.value;
@@ -1600,7 +1669,7 @@ function renderReports(){
   dom.reportSummary.textContent='Посещаемость: '+percent(r.rate)+' · Проведено занятий: '+r.held+' · Заполнено: '+r.marked+' из '+r.slots+' ('+percent(r.completeness)+'). Без отметки: '+r.unmarked+'. Исключено занятий: '+r.excludedLessons+'.';
   r.groups[options.group].forEach(function(g){var tr=el('tr');[g.name,g.present,g.late,g.absent,g.marked,percent(g.rate)].forEach(function(v){tr.appendChild(el('td',String(v)));});dom.reportRows.appendChild(tr);});
   if(!r.groups[options.group].length){var tr=el('tr'),td=el('td','За этот период нет подходящих проведённых занятий.');td.colSpan=6;tr.appendChild(td);dom.reportRows.appendChild(tr);}
-  dom.reportNote.textContent='Опоздание считается посещением. Процент по классу и предмету считается по всем заполненным отметкам, а не как среднее процентов учеников. Дневные отметки без предмета ('+Object.keys(state.attendance).length+') в отчёт не включены.';
+  dom.reportNote.textContent='Отметка «Онлайн» считается посещением. Процент по классу и предмету считается по всем заполненным отметкам, а не как среднее процентов учеников. Дневные отметки без предмета ('+Object.keys(state.attendance).length+') в отчёт не включены.';
   try{if(storage)storage.setItem('attendance_report_filters',JSON.stringify(Object.assign({},options,{year:dom.reportYear.value,quarter:dom.reportQuarter.value})));}catch(e){}
 }
 function openReports(){fillSelect(dom.reportClass,state.classes,'Все классы');fillSelect(dom.reportSubject,state.subjects,'Все предметы');fillSelect(dom.reportStudent,state.students.map(function(s){return Object.assign({},s,{deleted:false});}),'Все ученики');var saved={};try{saved=JSON.parse(storage&&storage.getItem('attendance_report_filters')||'{}');}catch(e){}if(saved.classId)dom.reportClass.value=saved.classId;if(saved.subjectId)dom.reportSubject.value=saved.subjectId;if(saved.studentId)dom.reportStudent.value=saved.studentId;renderReports();openModal(dom.reportsModal,dom.reportQuarter);}
@@ -1617,8 +1686,8 @@ function sheetXML(rows,widths,filter){var xml='<?xml version="1.0" encoding="UTF
 rows.forEach(function(row,i){xml+='<row r="'+(i+1)+'" ht="'+(i?Math.max(32,Math.max.apply(null,row.map(function(v,j){return typeof v==='string'?Math.ceil(v.length/(widths[j]-2))*16+12:32;}))):36)+'" customHeight="1">';row.forEach(function(v,j){var ref=columnName(j)+(i+1),style=i===0?1:v&&typeof v==='object'?2:0;if(v&&typeof v==='object'){xml+='<c r="'+ref+'" s="'+style+'"><f>'+xmlText(v.formula)+'</f><v>'+v.value+'</v></c>';}else if(typeof v==='number')xml+='<c r="'+ref+'" s="'+style+'"><v>'+v+'</v></c>';else xml+='<c r="'+ref+'" t="inlineStr" s="'+style+'"><is><t xml:space="preserve">'+xmlText(v==null?'':v)+'</t></is></c>';});xml+='</row>';});xml+='</sheetData>';if(filter&&rows.length>1)xml+='<autoFilter ref="A1:'+columnName(rows[0].length-1)+rows.length+'"/>';return xml+'<pageSetup orientation="landscape" paperSize="9"/></worksheet>';}
 async function createReportWorkbook(report){
   var zip=new JSZip(),sheets=[];
-  var info=[['Отчёт посещаемости','Значение'],['Период',report.options.start+' — '+report.options.end],['Класс',report.options.classId?named('classes',report.options.classId):'Все классы'],['Предмет',report.options.subjectId?named('subjects',report.options.subjectId):'Все предметы'],['Ученик',report.options.studentId?named('students',report.options.studentId):'Все ученики'],['Сформирован',new Date(report.generatedAt).toLocaleString('ru-RU')],['Правило','(Присутствия + опоздания) / заполненные отметки прошедших проведённых занятий'],['Проведено занятий',report.held],['Исключено занятий',report.excludedLessons],['Заполнено отметок',report.marked],['Без отметки',report.unmarked],['Посещаемость',percent(report.rate)],['Дневные отметки','Не входят в отчёты по предметам'],['Время','Окончание занятия сравнивается с местным временем устройства']];sheets.push({name:'Об отчёте',rows:info,widths:[32,95]});
-  ['students','classes','subjects'].forEach(function(type){var rows=[['Имя / название','Присутствия','Опоздания','Пропуски','Отмечено','Посещаемость','Без отметки']];report.groups[type].forEach(function(g){var n=rows.length+1;rows.push([g.name,g.present,g.late,g.absent,g.marked,g.marked?{formula:'(B'+n+'+C'+n+')/E'+n,value:g.rate}:'—',g.unmarked]);});sheets.push({name:{students:'Ученики',classes:'Классы',subjects:'Предметы'}[type],rows:rows,widths:[35,16,16,16,16,20,18],filter:true});});
+  var info=[['Отчёт посещаемости','Значение'],['Период',report.options.start+' — '+report.options.end],['Класс',report.options.classId?named('classes',report.options.classId):'Все классы'],['Предмет',report.options.subjectId?named('subjects',report.options.subjectId):'Все предметы'],['Ученик',report.options.studentId?named('students',report.options.studentId):'Все ученики'],['Сформирован',new Date(report.generatedAt).toLocaleString('ru-RU')],['Правило','(Присутствия + Онлайн) / заполненные отметки прошедших проведённых занятий'],['Проведено занятий',report.held],['Исключено занятий',report.excludedLessons],['Заполнено отметок',report.marked],['Без отметки',report.unmarked],['Посещаемость',percent(report.rate)],['Дневные отметки','Не входят в отчёты по предметам'],['Время','Окончание занятия сравнивается с местным временем устройства']];sheets.push({name:'Об отчёте',rows:info,widths:[32,95]});
+  ['students','classes','subjects'].forEach(function(type){var rows=[['Имя / название','Присутствия','Онлайн','Пропуски','Отмечено','Посещаемость','Без отметки']];report.groups[type].forEach(function(g){var n=rows.length+1;rows.push([g.name,g.present,g.late,g.absent,g.marked,g.marked?{formula:'(B'+n+'+C'+n+')/E'+n,value:g.rate}:'—',g.unmarked]);});sheets.push({name:{students:'Ученики',classes:'Классы',subjects:'Предметы'}[type],rows:rows,widths:[35,16,16,16,16,20,18],filter:true});});
   sheets.push({name:'Исходные отметки',rows:[['Дата','Окончание','Класс','Предмет','Ученик','Отметка','Участие в расчёте']].concat(report.source),widths:[16,14,25,28,35,22,26],filter:true});
   var types='<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>';
   var workbook='<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>',rels='<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">';
@@ -1632,7 +1701,7 @@ async function createReportPDF(report){
   var pdf=await PDFLib.PDFDocument.create();pdf.setTitle('Отчёт посещаемости');pdf.setLanguage('ru-RU');pdf.setCreationDate(new Date(report.generatedAt));
   var rows=report.groups[report.options.group],canvas,ctx,y,pageNo=0,W=1684,H=1190,margin=70,cols=[70,674,838,998,1165,1322],widths=[604,164,160,167,157,292];
   async function finish(){if(!canvas)return;var img=await pdf.embedPng(canvas.toDataURL('image/png'));var page=pdf.addPage([842,595]);page.drawImage(img,{x:0,y:0,width:842,height:595});}
-  function start(){pageNo++;canvas=document.createElement('canvas');canvas.width=W;canvas.height=H;ctx=canvas.getContext('2d');ctx.fillStyle='#ffffff';ctx.fillRect(0,0,W,H);ctx.fillStyle='#166b73';ctx.font='bold 42px Arial';ctx.fillText('Отчёт посещаемости',margin,95);ctx.fillStyle='#34494c';ctx.font='24px Arial';ctx.fillText(report.options.start+' — '+report.options.end+'  ·  '+({students:'По ученикам',classes:'По классам',subjects:'По предметам'}[report.options.group]),margin,139);ctx.font='20px Arial';var filter='Класс: '+(report.options.classId?named('classes',report.options.classId):'Все')+' · Предмет: '+(report.options.subjectId?named('subjects',report.options.subjectId):'Все')+' · Ученик: '+(report.options.studentId?named('students',report.options.studentId):'Все');var lines=wrapCanvas(ctx,filter,W-margin*2);y=174;lines.forEach(function(line){ctx.fillText(line,margin,y);y+=25;});ctx.fillText('Посещаемость '+percent(report.rate)+' · Проведено занятий '+report.held+' · Отмечено '+report.marked+' из '+report.slots+' · Без отметки '+report.unmarked,margin,y+12);y+=42;ctx.fillStyle='#166b73';ctx.fillRect(margin,y,W-2*margin,52);ctx.fillStyle='#ffffff';ctx.font='bold 20px Arial';['Имя / название','Был','Опоздал','Пропустил','Отмечено','Посещаемость'].forEach(function(v,i){ctx.fillText(v,cols[i]+12,y+33);});y+=52;ctx.fillStyle='#67787a';ctx.font='18px Arial';ctx.fillText('Будущие, непроведённые занятия и пустые отметки исключены. Опоздание = посещение.',margin,H-78);ctx.fillText('Дневные отметки без предмета не включены. Сформирован '+new Date(report.generatedAt).toLocaleString('ru-RU'),margin,H-51);ctx.fillText('Стр. '+pageNo,W-145,H-51);}
+  function start(){pageNo++;canvas=document.createElement('canvas');canvas.width=W;canvas.height=H;ctx=canvas.getContext('2d');ctx.fillStyle='#ffffff';ctx.fillRect(0,0,W,H);ctx.fillStyle='#166b73';ctx.font='bold 42px Arial';ctx.fillText('Отчёт посещаемости',margin,95);ctx.fillStyle='#34494c';ctx.font='24px Arial';ctx.fillText(report.options.start+' — '+report.options.end+'  ·  '+({students:'По ученикам',classes:'По классам',subjects:'По предметам'}[report.options.group]),margin,139);ctx.font='20px Arial';var filter='Класс: '+(report.options.classId?named('classes',report.options.classId):'Все')+' · Предмет: '+(report.options.subjectId?named('subjects',report.options.subjectId):'Все')+' · Ученик: '+(report.options.studentId?named('students',report.options.studentId):'Все');var lines=wrapCanvas(ctx,filter,W-margin*2);y=174;lines.forEach(function(line){ctx.fillText(line,margin,y);y+=25;});ctx.fillText('Посещаемость '+percent(report.rate)+' · Проведено занятий '+report.held+' · Отмечено '+report.marked+' из '+report.slots+' · Без отметки '+report.unmarked,margin,y+12);y+=42;ctx.fillStyle='#166b73';ctx.fillRect(margin,y,W-2*margin,52);ctx.fillStyle='#ffffff';ctx.font='bold 20px Arial';['Имя / название','Был','Онлайн','Пропустил','Отмечено','Посещаемость'].forEach(function(v,i){ctx.fillText(v,cols[i]+12,y+33);});y+=52;ctx.fillStyle='#67787a';ctx.font='18px Arial';ctx.fillText('Будущие, непроведённые занятия и пустые отметки исключены. Онлайн = посещение.',margin,H-78);ctx.fillText('Дневные отметки без предмета не включены. Сформирован '+new Date(report.generatedAt).toLocaleString('ru-RU'),margin,H-51);ctx.fillText('Стр. '+pageNo,W-145,H-51);}
   start();if(!rows.length){ctx.fillStyle='#34494c';ctx.font='24px Arial';ctx.fillText('Нет проведённых занятий за выбранный период.',margin+12,y+50);}
   for(var i=0;i<rows.length;i++){var g=rows[i];ctx.font='23px Arial';var lines=wrapCanvas(ctx,g.name,widths[0]-28),height=Math.max(56,lines.length*28+20);if(y+height>H-112){await finish();start();}ctx.fillStyle=i%2?'#f0f6f6':'#ffffff';ctx.fillRect(margin,y,W-margin*2,height);ctx.fillStyle='#21383b';ctx.font='23px Arial';lines.forEach(function(line,j){ctx.fillText(line,cols[0]+12,y+33+j*28);});[g.present,g.late,g.absent,g.marked,percent(g.rate)].forEach(function(v,j){ctx.fillText(String(v),cols[j+1]+12,y+33);});y+=height;}
   await finish();return new Blob([await pdf.save()],{type:'application/pdf'});

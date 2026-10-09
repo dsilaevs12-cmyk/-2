@@ -2782,7 +2782,11 @@ input:not([type]), select, textarea { border-radius: var(--radius-sm); }
 .device-list, .user-list { min-width: 0; }
 .device-row { border-radius: var(--radius-md); }
 .device-role, .device-input { border-radius: var(--radius-sm); }
-.user-remove { border-radius: var(--radius-sm); }
+.user-remove, .class-remove { border-radius: var(--radius-sm); }
+/* Class rows reuse the device-row layout: name+badges | stats | delete. */
+.class-row { grid-template-columns: minmax(0,1.4fr) minmax(0,1.2fr) 132px; }
+.class-row .device-seen { text-align: left; }
+@media (max-width: 640px) { .class-row { grid-template-columns: 1fr; } .class-row .class-remove { width: 100%; } }
 .device-badge { border-radius: var(--radius-full); }
 .role-banner { border-radius: var(--radius-md); }
 
