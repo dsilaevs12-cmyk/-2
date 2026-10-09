@@ -2653,29 +2653,3 @@ body[data-tech-admin] .role-banner{background:#dff1ea;border-color:#176c5c;color
   .project-panel-body .row-actions{align-items:center}
   .project-panel-body .row-actions .secondary{flex:1 1 auto;min-width:0;white-space:normal}
 }
-
-/* ---------- Student role screen: only homework + own attendance remain ---------- */
-/* Hide every other row/panel on the journal page for the "Ученик" device.
-   The tech-admin add-on removes body.role-student-view, so nothing is hidden then. */
-body.role-student-view .page-header .header-actions > *{display:none!important}
-body.role-student-view #syncOverview,
-body.role-student-view .summary-grid,
-body.role-student-view #journalControls .panel-heading p,
-body.role-student-view #journalControls .class-toolbar,
-body.role-student-view #journalControls .controls .student-entry,
-body.role-student-view #journalControls .search-block,
-body.role-student-view #attendanceTableCard .legend,
-body.role-student-view #offlineDetails,
-body.role-student-view .sync-panel,
-body.role-student-view #lessonsPanel,
-body.role-student-view .nav-footnote{display:none!important}
-/* Homework panel: strip teacher-only controls, keep the list readable */
-body.role-student-view #hwPanel .help-text,
-body.role-student-view #hwPanel .project-form label:first-child,
-body.role-student-view #hwPanel textarea#hwText,
-body.role-student-view #hwPanel .row-actions{display:none!important}
-/* Attendance table: cells stay visible but unclickable for students */
-body.role-student-view [data-action="card"]{pointer-events:none}
-body.role-student-view #glassNavigation [data-nav]{display:flex}
-body.role-student-view #glassNavigation [data-nav][hidden]{display:none!important}
-@media print{body.role-student-view .role-banner{display:none}}
