@@ -130,7 +130,10 @@ function cleanDeviceMeta(meta) {
     var name = typeof entry.name === "string" ? entry.name.trim().slice(0, 40) : "";
     var seenAt = Number(entry.seenAt);
     var updatedAt = Number(entry.updatedAt);
-    result[id] = { name: name, seenAt: Number.isFinite(seenAt) && seenAt > 0 ? seenAt : 0, updatedAt: Number.isFinite(updatedAt) && updatedAt > 0 ? updatedAt : 0 };
+    // Device role: teacher / student / admin / observer (default: teacher).
+    // Stored per device and synced like the name; see DEVICE_ROLES below.
+    var role = DEVICE_ROLE_KEYS.indexOf(entry.role) !== -1 ? entry.role : "teacher";
+    result[id] = { name: name, role: role, seenAt: Number.isFinite(seenAt) && seenAt > 0 ? seenAt : 0, updatedAt: Number.isFinite(updatedAt) && updatedAt > 0 ? updatedAt : 0 };
   });
   return result;
 }
@@ -139,10 +142,64 @@ function mergeDeviceMeta(local, remote) {
   Object.keys(remoteData).forEach(function (id) {
     var incoming = remoteData[id], existing = result[id];
     if (!existing) { result[id] = incoming; return; }
-    var mergedName = (incoming.updatedAt || 0) >= (existing.updatedAt || 0) ? incoming.name : existing.name;
-    result[id] = { name: mergedName || existing.name || incoming.name, seenAt: Math.max(existing.seenAt || 0, incoming.seenAt || 0), updatedAt: Math.max(existing.updatedAt || 0, incoming.updatedAt || 0) };
+    var latest = (incoming.updatedAt || 0) >= (existing.updatedAt || 0) ? incoming : existing;
+    var other = latest === incoming ? existing : incoming;
+    result[id] = { name: (latest.name || other.name || ""), role: DEVICE_ROLE_KEYS.indexOf(latest.role) !== -1 ? latest.role : (DEVICE_ROLE_KEYS.indexOf(other.role) !== -1 ? other.role : "teacher"), seenAt: Math.max(existing.seenAt || 0, incoming.seenAt || 0), updatedAt: Math.max(existing.updatedAt || 0, incoming.updatedAt || 0) };
   });
   return result;
+}
+/* ---------- Device roles (teacher / student / admin / observer) ---------- */
+// Roles are stored in deviceMeta and travel inside the synced journal, so the
+// whole fleet sees one consistent assignment. Editing roles requires a write
+// connection (token); the current device always keeps its own role editable.
+var DEVICE_ROLES = {
+  teacher: { label: "Учитель", hint: "Полный доступ к журналу: ученики, занятия, посещаемость и домашние задания." },
+  student: { label: "Ученик", hint: "Только просмотр: журнал, оценки и домашние задания без изменений." },
+  admin: { label: "Тех. администрация", hint: "Просмотр всего + управление устройствами и синхронизацией." },
+  observer: { label: "Наблюдатель", hint: "Только чтение отчётов и статистики, без доступа к редактированию." }
+};
+var DEVICE_ROLE_KEYS = Object.keys(DEVICE_ROLES);
+function deviceRole(id) {
+  var entry = (state.deviceMeta || {})[id];
+  return entry && DEVICE_ROLE_KEYS.indexOf(entry.role) !== -1 ? entry.role : "teacher";
+}
+function setDeviceRole(id, role) {
+  if (DEVICE_ROLE_KEYS.indexOf(role) === -1) return false;
+  if (id !== deviceId && !syncWritable()) { showToast("Смена ролей других устройств требует токен для отправки", "warning"); return false; }
+  var meta = state.deviceMeta || (state.deviceMeta = {});
+  var entry = meta[id] || (meta[id] = { seenAt: 0 });
+  entry.role = role;
+  entry.updatedAt = nextTimestamp();
+  entry.seenAt = Math.max(entry.seenAt || 0, id === deviceId ? Date.now() : 0);
+  saveLocal(); scheduleSync(); renderDeviceList(); applyRoleRestrictions();
+  showToast("Роль «" + DEVICE_ROLES[role].label + "» назначена устройству " + (entry.name || id.slice(0, 4)), "success");
+  return true;
+}
+// Enforce the current device's role on the interface: read-only roles lock all
+// mutating controls. Admin may still manage devices/sync (those stay enabled).
+function applyRoleRestrictions() {
+  var role = deviceRole(deviceId);
+  var readOnly = role === "student" || role === "observer";
+  document.body.classList.toggle("role-readonly", readOnly);
+  document.body.setAttribute("data-role", role);
+  var banner = dom.roleBanner;
+  if (banner) {
+    if (readOnly) {
+      banner.hidden = false;
+      banner.textContent = role === "student"
+        ? "Режим «Ученик»: просмотр журнала и заданий без изменений"
+        : "Режим «Наблюдатель»: только отчёты и статистика";
+    } else banner.hidden = true;
+  }
+  // Disable every control that writes data when this device is read-only.
+  // Students and observers cannot edit the journal; only teachers and admins
+  // may rename devices or assign roles.
+  var selector = "#addStudentButton, #studentName, #hwAddButton, #hwPinButton, #hwClearButton, #hwText, #createLessonButton, [data-action='lesson-edit'], .lesson-roster-row select, .icon-button.hw-delete";
+  Array.prototype.forEach.call(document.querySelectorAll(selector), function (el) { el.disabled = readOnly; });
+  Array.prototype.forEach.call(document.querySelectorAll(".device-input, .device-role"), function (el) {
+    if (el.dataset.deviceId === deviceId && role !== "student" && role !== "observer") return; // own device stays editable for teacher/admin
+    el.disabled = readOnly || (role !== "teacher" && role !== "admin");
+  });
 }
 function newer(a, b) {
   if (!a) return b; if (!b) return a;
@@ -417,7 +474,7 @@ function init() {
   try { if (sessStorage) sessStorage.removeItem("attendance_dev_unlocked"); } catch (error) {}
   try { if (!state.devUnlocked && storage && storage.getItem(SETTINGS_UNLOCK_KEY) === "1") state.devUnlocked = true; } catch (error) {}
   if (!storage) updateLocalStatus("Только в этой вкладке", true);
-  loadViewPreference(); dom.intervalSelect.value = String(syncRuntime.pollIntervalMs); wireCoreEvents(); wireViewEvents(); wireProjectEvents(); wireAppUpdates(); updateSyncUI(); render();
+  loadViewPreference(); dom.intervalSelect.value = String(syncRuntime.pollIntervalMs); wireCoreEvents(); wireViewEvents(); wireProjectEvents(); wireAppUpdates(); updateSyncUI(); render(); applyRoleRestrictions();
   // Read-only connection: a Gist ID without a token still downloads a public journal.
   if (syncReadOnly()) { fullSync("auto"); }
   if (syncWritable() && syncRuntime.pollIntervalMs > 0) { fullSync("auto"); startPolling(); }
@@ -696,6 +753,8 @@ function wireProjectEvents(){
   if(dom.hwClearButton)dom.hwClearButton.addEventListener('click',clearClassHomework);
   if(dom.refreshDeviceListButton)dom.refreshDeviceListButton.addEventListener('click',function(){refreshDeviceList();});
   if(dom.syncDeviceList)dom.syncDeviceList.addEventListener('change',function(event){
+    var roleSelect=event.target.closest('.device-role');
+    if(roleSelect&&roleSelect.dataset.deviceId){setDeviceRole(roleSelect.dataset.deviceId,roleSelect.value);return;}
     var input=event.target.closest('.device-input');if(!input||!input.dataset.deviceId)return;
     var id=input.dataset.deviceId,name=(input.value||'').trim().slice(0,40);
     var meta=state.deviceMeta||(state.deviceMeta={});var entry=meta[id]||(meta[id]={seenAt:0});
@@ -706,7 +765,7 @@ function wireProjectEvents(){
   wireReportEvents();wireOfflineEvents();
 }
 
-["hwPanel","hwDueDate","hwClassName","hwText","hwPinButton","hwClearButton","hwAddButton","hwHistory","syncDeviceList","refreshDeviceListButton"].forEach(function(id){dom[id]=document.getElementById(id);});
+["hwPanel","hwDueDate","hwClassName","hwText","hwPinButton","hwClearButton","hwAddButton","hwHistory","syncDeviceList","refreshDeviceListButton","roleBanner"].forEach(function(id){dom[id]=document.getElementById(id);});
 
 /* Homework: unlimited entries pinned per class. Each entry is an item of the
  * synced "homework" list (id/classId/date/text), so a class can hold any number
@@ -1427,8 +1486,22 @@ function renderDeviceList() {
     if (id !== deviceId && !syncWritable()) input.disabled = true;
     input.title = id === deviceId ? "Ваше имя устройства — сохранится в облаке после ближайшей отправки" : "Переименовать это устройство (нужен токен для отправки)";
     row.appendChild(input);
+    // Role selector: teacher / student / admin / observer. Changing other
+    // devices' roles requires a write connection (token); own device is always editable.
+    var roleSelect = document.createElement("select"); roleSelect.className = "device-role"; roleSelect.dataset.deviceId = id;
+    DEVICE_ROLE_KEYS.forEach(function (key) {
+      var option = new Option(DEVICE_ROLES[key].label, key);
+      option.title = DEVICE_ROLES[key].hint;
+      roleSelect.appendChild(option);
+    });
+    roleSelect.value = DEVICE_ROLE_KEYS.indexOf(entry.role) !== -1 ? entry.role : "teacher";
+    roleSelect.setAttribute("aria-label", "Роль устройства: " + (entry.name || id.slice(0, 4)));
+    if (id !== deviceId && !syncWritable()) roleSelect.disabled = true;
+    roleSelect.title = id === deviceId ? "Ваша роль на этом устройстве" : "Назначить роль этому устройству (нужен токен для отправки)";
+    row.appendChild(roleSelect);
     container.appendChild(row);
   });
+  applyRoleRestrictions();
 }
 async function refreshDeviceList() {
   if (!syncConfigured()) { showToast("Сначала подключите Gist в разделе «Синхронизация»", "warning"); return; }
