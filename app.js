@@ -1008,9 +1008,12 @@ function settingsEditionText() {
 }
 // The header label is the version text edited in settings ("Текст кнопки
 // версии"), with the leading word "версия" replaced by "Версия журнала".
+// Matching is case-insensitive and tolerant of a missing space after the
+// colon (e.g. "версия:3.3") so the prefix is never duplicated or left in
+// lowercase.
 function settingsVersionText() {
   var text = String(state.settings.versionText || DEFAULT_VERSION_TEXT).trim();
-  return text.replace(/^версия\b/i, "Версия журнала");
+  return text.replace(/^версия\s*:?\s*/i, "Версия журнала: ");
 }
 function renderDebug() { dom.debugPre.textContent = JSON.stringify({ version: 5, deviceId: deviceId, revision: state.revision, pending: syncRuntime.hasPendingChanges, syncing: syncRuntime.isSyncing, lastError: syncConfig.lastError, students: getVisibleStudents().length, attendance: Object.keys(state.attendance).length, gistId: syncConfig.gistId || null }, null, 2); }
 function exportBackup() {
