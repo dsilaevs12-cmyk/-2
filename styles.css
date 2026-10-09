@@ -2485,9 +2485,11 @@ input[type="date"]:focus { outline: none; border-color: var(--primary); box-shad
 @media(max-width:560px){.sync-overview{align-items:stretch;flex-direction:column;padding:15px;gap:10px}.sync-overview button{width:100%}.app-update{align-items:stretch;flex-direction:column}}
 @media screen and (prefers-color-scheme:dark){.sync-overview{background:rgba(23,46,60,.85);border-color:rgba(255,255,255,.15)}.sync-overview strong{color:#93e0c8}.sync-overview p{color:#c2d1da}.sync-notice{background:#20483f;color:#c8f4e6;border-color:#477968}}
 @media(prefers-reduced-motion:reduce){.just-received{animation:none;outline:2px solid #148975}}
-.device-list-head{display:none;grid-template-columns:minmax(120px,1.2fr) minmax(64px,.7fr) minmax(110px,1fr) minmax(104px,.9fr) 84px;gap:8px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#5c7280;margin-bottom:6px}
+/* Shared column template — header and rows use the identical grid so nothing can drift out of alignment. */
+.device-list-head,.device-row{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.7fr) minmax(0,1fr) minmax(0,1.1fr) 84px;gap:8px;box-sizing:border-box}
+.device-list-head{display:none;padding:0 10px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#5c7280;margin-bottom:6px}
 .device-list{display:flex;flex-direction:column;gap:6px}
-.device-row{display:grid;grid-template-columns:minmax(120px,1.2fr) minmax(64px,.7fr) minmax(110px,1fr) minmax(104px,.9fr) 84px;gap:8px;align-items:center;padding:8px 10px;border:1px solid var(--border,#d9e2ec);border-radius:12px;background:var(--surface-2,rgba(255,255,255,.6))}
+.device-row{align-items:center;padding:8px 10px;border:1px solid var(--border,#d9e2ec);border-radius:12px;background:var(--surface-2,rgba(255,255,255,.6))}
 @media(min-width:641px){.device-list-head{display:grid}}
 .device-name{font-size:13px;font-weight:600;color:#1f3a45;overflow-wrap:anywhere}
 .device-id{font-size:11px;color:#71869a;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
