@@ -217,6 +217,28 @@ function applyRoleRestrictions() {
   document.body.classList.toggle("role-readonly", readOnly);
   document.body.setAttribute("data-role", perms.role);
   document.body.toggleAttribute("data-tech-admin", perms.techAdmin);
+  // Student view is intentionally minimal: homework + own attendance only.
+  // Every other row/panel on the screen is hidden for this role (unless the
+  // tech-admin add-on is active, which restores the full interface).
+  var studentMode = perms.role === "student" && !perms.techAdmin;
+  document.body.classList.toggle("role-student-view", studentMode);
+  Array.prototype.forEach.call(document.querySelectorAll("#glassNavigation [data-nav]"), function (item) {
+    var nav = item.dataset.nav;
+    item.hidden = studentMode && nav !== "homework";
+  });
+  if (studentMode) {
+    setStudentEntryOpen(false);
+    if (dom.searchInput) dom.searchInput.value = "";
+    state.searchQuery = "";
+    activeLessonId = "";
+    attendanceModalState.open = false;
+    studentCardState.studentId = "";
+    if (activeModal) closeModal();
+    if (dom.reportsModal) dom.reportsModal.classList.remove("open");
+    if (dom.lessonsPanel) dom.lessonsPanel.open = false;
+    if (dom.hwPanel) dom.hwPanel.open = true; // homework is the one thing a student needs
+    render(); // refresh the table/search UI after clearing filters
+  }
   var banner = dom.roleBanner;
   if (banner) {
     if (readOnly) {
