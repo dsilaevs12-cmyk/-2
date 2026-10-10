@@ -197,6 +197,21 @@
       <p id="authLoginError" class="password-error" role="alert"></p>
       <div class="modal-actions"><button type="submit" id="authLoginSubmit">Войти</button></div>
     </form>
+    <div id="authSyncPanel" class="auth-sync" hidden>
+      <div class="auth-sync-head"><h4>Синхронизация с другим устройством</h4><p class="help-text">Подключите тот же GitHub Gist, что и на первом устройстве, — журнал загрузится автоматически после входа.</p></div>
+      <label for="authSyncToken">GitHub-токен<input id="authSyncToken" type="password" placeholder="Можно оставить пустым для публичного Gist" autocomplete="off" spellcheck="false"></label>
+      <label for="authSyncGist">ID или ссылка на Gist<input id="authSyncGist" type="text" placeholder="https://gist.github.com/…" autocomplete="off" spellcheck="false"></label>
+      <label class="auth-sync-public"><input id="authSyncPublic" type="checkbox"> Публичный Gist (данные видят все)</label>
+      <p class="help-text auth-sync-warning" id="authSyncWarning" hidden>Публичный Gist читают все, кто знает его адрес. Не публикуйте персональные данные учеников.</p>
+      <p id="authSyncError" class="password-error" role="alert"></p>
+      <p id="authSyncStatus" class="auth-sync-status" role="status"></p>
+      <div class="modal-actions auth-sync-actions">
+        <button type="button" id="authSyncTestButton" class="secondary">Проверить связь</button>
+        <button type="button" id="authSyncSaveButton">Сохранить подключение</button>
+        <button type="button" id="authSyncCloseButton" class="secondary" aria-label="Закрыть окно синхронизации">×</button>
+      </div>
+    </div>
+    <button type="button" id="authSyncOpenButton" class="auth-sync-open secondary">Синхронизировать с другим устройством</button>
     <p class="auth-footnote" id="authFootnote"></p>
   </div>
 </div>
