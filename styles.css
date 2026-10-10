@@ -3137,37 +3137,6 @@ input:not([type]), select, textarea { border-radius: var(--radius-sm); }
       linear-gradient(160deg, #fdf3e0 0%, #f6e3c3 48%, #efd6ae 100%);
     background-attachment: fixed;
   }
-  .autumn-leaves { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
-  .autumn-leaves span {
-    position: absolute; top: -8vh; display: inline-block;
-    font-size: 22px; opacity: .5; filter: saturate(1.15);
-    will-change: transform;
-    animation: leaf-fall linear infinite;
-  }
-  .autumn-leaves span:nth-child(1){left:6%;  animation-duration:19s; animation-delay:-2s;  font-size:18px}
-  .autumn-leaves span:nth-child(2){left:22%; animation-duration:24s; animation-delay:-9s;  font-size:26px}
-  .autumn-leaves span:nth-child(3){left:38%; animation-duration:17s; animation-delay:-5s;  font-size:15px}
-  .autumn-leaves span:nth-child(4){left:55%; animation-duration:26s; animation-delay:-14s; font-size:24px}
-  .autumn-leaves span:nth-child(5){left:71%; animation-duration:21s; animation-delay:-7s;  font-size:19px}
-  .autumn-leaves span:nth-child(6){left:86%; animation-duration:28s; animation-delay:-3s;  font-size:27px}
-  @keyframes leaf-fall {
-    0%   { transform: translate3d(0,-8vh,0) rotate(0deg); }
-    50%  { transform: translate3d(4vw,50vh,0) rotate(180deg); }
-    100% { transform: translate3d(-2vw,110vh,0) rotate(360deg); }
-  }
-  @media screen and (prefers-color-scheme: dark) {
-    body {
-      background-image:
-        radial-gradient(ellipse at 12% 4%, rgba(249,115,22,.14), transparent 58%),
-        radial-gradient(ellipse at 88% 78%, rgba(120,53,15,.22), transparent 55%),
-        linear-gradient(160deg, #1c130a 0%, #241708 50%, #171008 100%);
-    }
-    .autumn-leaves span { opacity: .32; }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .autumn-leaves { display: none; }
-    body { background-attachment: scroll; }
-  }
   .journal-panel,.table-card,.lessons-panel,.sync-panel{background:linear-gradient(125deg,#7c3d127a,#4a2c1299);border-color:rgba(250,225,190,.25)}
   #attendanceTableCard th.today-column{background:#7c4a1a;color:#ffe9c9}
   .container{background:linear-gradient(145deg,#5a3a1c66,#2b1f1466);box-shadow:0 24px 80px #0d08034d, inset 0 1px 2px #fad9a840, 0 0 0 1px #8a6a4440}
@@ -3177,4 +3146,83 @@ input:not([type]), select, textarea { border-radius: var(--radius-sm); }
   .maintenance-overlay{background:linear-gradient(135deg,#43200a 0%,#7c2d12 50%,#1c130a 100%)}
   .dev-section{background:#241a0f;border-color:#3d2f1f}
   .device-row{background:#1e150c;border-color:#3d2f1f}
+}
+
+/* ==========================================================================
+   Autumn theme: falling leaves — visible on ALL devices (phone, tablet, PC)
+   Base rules live OUTSIDE any media query so the animation is never limited
+   to a single breakpoint or colour scheme.
+   ========================================================================== */
+.autumn-leaves { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.autumn-leaves span {
+  position: absolute; top: -12vh; display: inline-block;
+  font-size: 24px; opacity: .55; filter: saturate(1.15);
+  will-change: transform;
+  animation: leaf-fall linear infinite;
+}
+@keyframes leaf-fall {
+  0%   { transform: translate3d(0,-12vh,0) rotate(0deg); }
+  25%  { transform: translate3d(6vw,25vh,0) rotate(90deg); }
+  50%  { transform: translate3d(-4vw,55vh,0) rotate(180deg); }
+  75%  { transform: translate3d(5vw,85vh,0) rotate(270deg); }
+  100% { transform: translate3d(-2vw,115vh,0) rotate(360deg); }
+}
+/* Phones (<=700px): modest density so the small screen stays readable */
+@media screen and (max-width:700px){
+  .autumn-leaves span:nth-child(1){left:6%;  animation-duration:19s; animation-delay:-2s;  font-size:18px}
+  .autumn-leaves span:nth-child(2){left:22%; animation-duration:24s; animation-delay:-9s;  font-size:26px}
+  .autumn-leaves span:nth-child(3){left:38%; animation-duration:17s; animation-delay:-5s;  font-size:15px}
+  .autumn-leaves span:nth-child(4){left:55%; animation-duration:26s; animation-delay:-14s; font-size:24px}
+  .autumn-leaves span:nth-child(5){left:71%; animation-duration:21s; animation-delay:-7s;  font-size:19px}
+  .autumn-leaves span:nth-child(6){left:86%; animation-duration:28s; animation-delay:-3s;  font-size:27px}
+}
+/* Tablets (701–1100px): wider viewport needs more leaves + bigger sizes */
+@media screen and (min-width:701px) and (max-width:1100px){
+  .autumn-leaves span{font-size:30px; opacity:.5}
+  .autumn-leaves span:nth-child(1){left:4%;   animation-duration:21s; animation-delay:-2s;  font-size:24px}
+  .autumn-leaves span:nth-child(2){left:16%;  animation-duration:26s; animation-delay:-9s;  font-size:32px}
+  .autumn-leaves span:nth-child(3){left:28%;  animation-duration:18s; animation-delay:-5s;  font-size:20px}
+  .autumn-leaves span:nth-child(4){left:41%;  animation-duration:28s; animation-delay:-14s; font-size:30px}
+  .autumn-leaves span:nth-child(5){left:54%;  animation-duration:23s; animation-delay:-7s;  font-size:26px}
+  .autumn-leaves span:nth-child(6){left:67%;  animation-duration:30s; animation-delay:-3s;  font-size:34px}
+  .autumn-leaves span:nth-child(7){left:79%;  animation-duration:20s; animation-delay:-11s; font-size:22px}
+  .autumn-leaves span:nth-child(8){left:91%;  animation-duration:27s; animation-delay:-6s;  font-size:31px}
+}
+/* Desktop PCs (>=1101px): full-bleed canopy of leaves across the wide screen */
+@media screen and (min-width:1101px){
+  .autumn-leaves span{font-size:34px; opacity:.48}
+  .autumn-leaves span:nth-child(1){left:3%;   animation-duration:23s; animation-delay:-2s;  font-size:26px}
+  .autumn-leaves span:nth-child(2){left:13%;  animation-duration:28s; animation-delay:-9s;  font-size:36px}
+  .autumn-leaves span:nth-child(3){left:23%;  animation-duration:20s; animation-delay:-5s;  font-size:22px}
+  .autumn-leaves span:nth-child(4){left:33%;  animation-duration:31s; animation-delay:-14s; font-size:34px}
+  .autumn-leaves span:nth-child(5){left:44%;  animation-duration:25s; animation-delay:-7s;  font-size:28px}
+  .autumn-leaves span:nth-child(6){left:55%;  animation-duration:33s; animation-delay:-3s;  font-size:38px}
+  .autumn-leaves span:nth-child(7){left:65%;  animation-duration:22s; animation-delay:-11s; font-size:24px}
+  .autumn-leaves span:nth-child(8){left:75%;  animation-duration:29s; animation-delay:-6s;  font-size:35px}
+  .autumn-leaves span:nth-child(9){left:85%;  animation-duration:26s; animation-delay:-16s; font-size:30px}
+  .autumn-leaves span:nth-child(10){left:95%; animation-duration:35s; animation-delay:-8s;  font-size:40px}
+}
+/* Dark mode: slightly dimmer leaves + warm dark wash (all breakpoints) */
+@media screen and (prefers-color-scheme:dark){
+  body{
+    background-image:
+      radial-gradient(ellipse at 12% 4%, rgba(249,115,22,.14), transparent 58%),
+      radial-gradient(ellipse at 88% 78%, rgba(120,53,15,.22), transparent 55%),
+      linear-gradient(160deg, #1c130a 0%, #241708 50%, #171008 100%);
+  }
+  .autumn-leaves span{opacity:.34}
+}
+/* Accessibility: respect reduced-motion everywhere */
+@media (prefers-reduced-motion:reduce){
+  .autumn-leaves span{animation:none; display:none}
+  body{background-attachment:scroll}
+}
+
+/* Autumn theme: keep falling leaves visible behind the translucent glass card
+   on tablets and PCs (the glass container used to hide them completely). */
+@media screen and (min-width:701px){
+  .container{background:linear-gradient(124deg,#ffffff26,#e0f4ff52 48%,#c4e7ff3d)}
+}
+@media screen and (min-width:701px) and (prefers-color-scheme:dark){
+  .container{background:linear-gradient(145deg,#5a3a1c40,#2b1f144d)}
 }
