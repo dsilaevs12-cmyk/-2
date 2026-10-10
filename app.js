@@ -411,8 +411,10 @@ function cleanDeviceMeta(meta) {
     // not a base role — it stacks on top of any role. See DEVICE_ROLES below.
     var role = DEVICE_ROLE_KEYS.indexOf(entry.role) !== -1 ? entry.role : "teacher";
     var techAdmin = entry.techAdmin === true || entry.role === "admin"; // migrate legacy "admin" role → add-on flag
+    var parentStudentId = validId(entry.parentStudentId) ? entry.parentStudentId : ""; // «Родитель» → linked journal student
+    var childPhone = typeof entry.childPhone === "string" ? entry.childPhone.trim().slice(0, 30) : ""; // fallback link by phone tail
     var roleExplicit = entry.roleExplicit === true;
-    result[id] = { name: name, role: role, roleExplicit: roleExplicit, techAdmin: techAdmin, seenAt: Number.isFinite(seenAt) && seenAt > 0 ? seenAt : 0, updatedAt: Number.isFinite(updatedAt) && updatedAt > 0 ? updatedAt : 0 };
+    result[id] = { name: name, role: role, roleExplicit: roleExplicit, techAdmin: techAdmin, parentStudentId: parentStudentId, childPhone: childPhone, seenAt: Number.isFinite(seenAt) && seenAt > 0 ? seenAt : 0, updatedAt: Number.isFinite(updatedAt) && updatedAt > 0 ? updatedAt : 0 };
   });
   return result;
 }
@@ -423,7 +425,7 @@ function mergeDeviceMeta(local, remote) {
     if (!existing) { result[id] = incoming; return; }
     var latest = (incoming.updatedAt || 0) >= (existing.updatedAt || 0) ? incoming : existing;
     var other = latest === incoming ? existing : incoming;
-    result[id] = { name: (latest.name || other.name || ""), role: DEVICE_ROLE_KEYS.indexOf(latest.role) !== -1 ? latest.role : (DEVICE_ROLE_KEYS.indexOf(other.role) !== -1 ? other.role : "teacher"), roleExplicit: Boolean((latest === incoming ? incoming.roleExplicit : existing.roleExplicit) || (latest === existing ? existing.roleExplicit : incoming.roleExplicit)), techAdmin: Boolean(latest.techAdmin || other.techAdmin), seenAt: Math.max(existing.seenAt || 0, incoming.seenAt || 0), updatedAt: Math.max(existing.updatedAt || 0, incoming.updatedAt || 0) };
+    result[id] = { name: (latest.name || other.name || ""), role: DEVICE_ROLE_KEYS.indexOf(latest.role) !== -1 ? latest.role : (DEVICE_ROLE_KEYS.indexOf(other.role) !== -1 ? other.role : "teacher"), roleExplicit: Boolean((latest === incoming ? incoming.roleExplicit : existing.roleExplicit) || (latest === existing ? existing.roleExplicit : incoming.roleExplicit)), techAdmin: Boolean(latest.techAdmin || other.techAdmin), parentStudentId: latest.parentStudentId || other.parentStudentId || "", childPhone: latest.childPhone || other.childPhone || "", seenAt: Math.max(existing.seenAt || 0, incoming.seenAt || 0), updatedAt: Math.max(existing.updatedAt || 0, incoming.updatedAt || 0) };
   });
   return result;
 }
@@ -435,10 +437,58 @@ function mergeDeviceMeta(local, remote) {
 // device after entering the settings password; it stacks next to any base role
 // and unlocks every function regardless of that role.
 var DEVICE_ROLES = {
-  teacher: { label: "Учитель", hint: "Отметки посещаемости, добавление учеников и классов, задания (добавление/удаление), статистика." },
+  teacher: { label: "Учитель", hint: "Отметки посещаемости, добавление учеников и классов, задания (добавление/удаление), статистика, одобрение заявок родителей." },
   student: { label: "Ученик", hint: "Только просмотр домашних заданий и своей посещаемости/пропусков." },
+  parent: { label: "Родитель", hint: "Просмотр отметок и домашних заданий ребёнка; по тапу на ячейку — заявка на отсутствие, которую одобряет учитель." },
   observer: { label: "Наблюдатель", hint: "Полный обзор журнала, отчётов и статистики — без каких-либо изменений." }
 };
+// Linked-student resolution for the «parent» role. A parent device is attached
+// to a journal student either explicitly (deviceMeta.parentStudentId, set by an
+// admin in the device list) or automatically when the signed-in account's phone
+// matches the student's phone (students get phones via registered accounts).
+function linkedStudentForParent(id) {
+  var entry = (state.deviceMeta || {})[id] || {};
+  if (entry.parentStudentId) {
+    var s0 = getStudentById(entry.parentStudentId);
+    if (s0 && !s0.deleted) return s0;
+  }
+  // Explicit child phone saved by an admin on the parent device row.
+  if (entry.childPhone) {
+    var ep = String(entry.childPhone).replace(/\D/g, "");
+    if (ep.length >= 7) {
+      var all = state.students || [];
+      for (var k = 0; k < all.length; k++) {
+        var sk = all[k];
+        if (!sk || sk.deleted) continue;
+        var pk = String(sk.phone || "").replace(/\D/g, "");
+        if (pk && pk.slice(-10) === ep.slice(-10)) return sk;
+      }
+    }
+  }
+  var session = id === deviceId ? currentAuthSession() : null;
+  var acc = session && session.accountId ? findAuthAccountById(session.accountId) : null;
+  var students = state.students || [];
+  if (acc && acc.phone) {
+    var ph = String(acc.phone).replace(/\D/g, "");
+    if (ph.length >= 7) {
+      for (var i = 0; i < students.length; i++) {
+        var st = students[i];
+        if (!st || st.deleted) continue;
+        var sp = String(st.phone || "").replace(/\D/g, "");
+        if (sp && sp.slice(-10) === ph.slice(-10)) return st;
+      }
+    }
+  }
+  // Registered account whose name matches a journal student ("Иван Петров").
+  if (session && session.fullName) {
+    var norm = authNormalizeName(session.fullName);
+    for (var j = 0; j < students.length; j++) {
+      var st2 = students[j];
+      if (st2 && !st2.deleted && (st2.accountId === session.accountId || authNormalizeName(st2.name || "") === norm)) return st2;
+    }
+  }
+  return null;
+}
 var DEVICE_ROLE_KEYS = Object.keys(DEVICE_ROLES);
 function deviceRole(id) {
   // Accounts created via the registration screen are students by default:
