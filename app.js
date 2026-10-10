@@ -629,6 +629,85 @@ function wireAuthGate() {
   });
   [d.authRegFirst, d.authRegLast, d.authRegPass1, d.authRegPass2].forEach(function (el) { el.addEventListener("input", function () { d.authRegisterError.textContent = ""; }); });
   [d.authLoginName, d.authLoginPass, d.authPhone, d.authSmsCode, d.authSecretWord].forEach(function (el) { el.addEventListener("input", function () { d.authLoginError.textContent = ""; }); });
+  wireAuthSyncWindow();
+}
+// ---------- Sync window inside the login menu ----------
+// The auth gate carries its own compact synchronization dialog so a brand-new
+// device can attach to the same Gist before the first login. It reuses the
+// regular sync engine (fetchFromGist / saveSyncConfig / fullSync): "Проверить
+// связь" validates the connection without saving it, "Сохранить подключение"
+// persists the settings and immediately pulls the journal from the cloud.
+function wireAuthSyncWindow() {
+  var d = dom;
+  if (!d.authSyncOpenButton || !d.authSyncPanel) return;
+  d.authSyncOpenButton.addEventListener("click", openAuthSyncWindow);
+  d.authSyncCloseButton.addEventListener("click", closeAuthSyncWindow);
+  d.authSyncPublic.addEventListener("change", function () { d.authSyncWarning.hidden = !d.authSyncPublic.checked; });
+  [d.authSyncToken, d.authSyncGist].forEach(function (el) { el.addEventListener("input", function () { d.authSyncError.textContent = ""; }); });
+  d.authSyncTestButton.addEventListener("click", handleAuthSyncTest);
+  d.authSyncSaveButton.addEventListener("click", handleAuthSyncSave);
+}
+function authSyncInputConfig() {
+  var token = dom.authSyncToken.value.trim(), gistId = extractGistId(dom.authSyncGist.value);
+  if (!/^[a-f0-9]{5,64}$/i.test(gistId) || /[\r\n]/.test(token)) throw new Error("Введите правильный ID Gist (ссылку на публичный Gist тоже можно вставить целиком).");
+  return syncOperationConfig(token, gistId);
+}
+function setAuthSyncBusy(busy) {
+  dom.authSyncTestButton.disabled = busy; dom.authSyncSaveButton.disabled = busy;
+  dom.authSyncSaveButton.textContent = busy ? "Подключаем…" : "Сохранить подключение";
+}
+async function handleAuthSyncTest() {
+  dom.authSyncError.textContent = ""; dom.authSyncStatus.textContent = "";
+  var proposed;
+  try { proposed = authSyncInputConfig(); } catch (error) { dom.authSyncError.textContent = error.message; return; }
+  setAuthSyncBusy(true);
+  try {
+    var result = await fetchFromGist(proposed, { unconditional: true, noCache: true });
+    syncCheckGeneration(proposed);
+    dom.authSyncStatus.textContent = "Связь установлена. " + (result.gistPublic ? "Gist публичный" : "Gist непубличный") + ", формат журнала проверен." + (proposed.token ? "" : " Доступ только для чтения.");
+  } catch (error) { if (!error.stale) dom.authSyncError.textContent = error.message || "Не удалось связаться с Gist."; }
+  finally { setAuthSyncBusy(false); }
+}
+async function handleAuthSyncSave() {
+  dom.authSyncError.textContent = ""; dom.authSyncStatus.textContent = "";
+  var proposed;
+  try { proposed = authSyncInputConfig(); } catch (error) { dom.authSyncError.textContent = error.message; return; }
+  if (!proposed.token && !dom.authSyncPublic.checked) {
+    dom.authSyncError.textContent = "Для работы без токена Gist должен быть публичным: отметьте «Публичный Gist». Для отправки изменений в непубличный Gist укажите токен.";
+    return;
+  }
+  setAuthSyncBusy(true);
+  try {
+    var result = await fetchFromGist(proposed, { unconditional: true, noCache: true });
+    syncCheckGeneration(proposed);
+    syncInvalidate();
+    syncConfig.token = proposed.token; syncConfig.gistId = proposed.gistId; syncConfig.enabled = true;
+    syncConfig.isPublicGist = Boolean(result.gistPublic);
+    syncConfig.lastSync = 0; syncConfig.lastSyncStatus = "off"; syncConfig.lastError = "";
+    syncRuntime.hasPendingChanges = true;
+    saveSyncConfig(); updateSyncUI();
+    startPolling();
+    // Pull the journal right away so a fresh device already shows the data
+    // while the user is still on the login screen.
+    try { await fullSync("manual"); } catch (error) {}
+    dom.authSyncStatus.textContent = "Подключение сохранено. Журнал загружен с устройства-источника — войдите, чтобы продолжить.";
+    showToast("Синхронизация подключена из окна входа.", "success");
+  } catch (error) { if (!error.stale) dom.authSyncError.textContent = error.message || "Не удалось сохранить подключение."; }
+  finally { setAuthSyncBusy(false); }
+}
+function openAuthSyncWindow() {
+  dom.authSyncPanel.hidden = false;
+  dom.authSyncOpenButton.hidden = true;
+  dom.authSyncError.textContent = ""; dom.authSyncStatus.textContent = "";
+  dom.authSyncToken.value = syncConfig.token; dom.authSyncGist.value = syncConfig.gistId;
+  dom.authSyncPublic.checked = Boolean(syncConfig.isPublicGist);
+  dom.authSyncWarning.hidden = !dom.authSyncPublic.checked;
+  (syncConfig.gistId ? dom.authSyncToken : dom.authSyncGist).focus();
+}
+function closeAuthSyncWindow() {
+  dom.authSyncPanel.hidden = true;
+  dom.authSyncOpenButton.hidden = false;
+  dom.authSyncOpenButton.focus();
 }
 function switchAuthTab(tab) {
   var register = tab === "register";
@@ -647,6 +726,8 @@ function openAuthGate(preferredTab) {
   if (dom.journalApp) dom.journalApp.inert = true;
   document.body.style.overflow = "hidden";
   dom.authFootnote.textContent = "";
+  // Always start with the sync window closed; it opens only on demand.
+  if (dom.authSyncPanel) { dom.authSyncPanel.hidden = true; dom.authSyncOpenButton.hidden = false; }
   switchAuthTab(preferredTab || (loadAuthAccounts().length ? "login" : "register"));
 }
 function closeAuthGate() {
@@ -1797,7 +1878,7 @@ function wireProjectEvents(){
 }
 
 ["hwPanel","hwDueDate","hwClassName","hwText","hwPinButton","hwClearButton","hwAddButton","hwHistory","syncDeviceList","refreshDeviceListButton","roleBanner"].forEach(function(id){dom[id]=document.getElementById(id);});
-["authGate","authTitle","authSubtitle","authTabRegister","authTabLogin","authRegisterForm","authLoginForm","authRegFirst","authRegLast","authRegPass1","authRegPass2","authRegisterError","authRegisterSubmit","authLoginName","authLoginPass","authPhone","authSmsRow","authSmsCode","authSmsHint","authSecretWord","authLoginError","authLoginSubmit","authFootnote"].forEach(function(id){dom[id]=document.getElementById(id);});
+["authGate","authTitle","authSubtitle","authTabRegister","authTabLogin","authRegisterForm","authLoginForm","authRegFirst","authRegLast","authRegPass1","authRegPass2","authRegisterError","authRegisterSubmit","authLoginName","authLoginPass","authPhone","authSmsRow","authSmsCode","authSmsHint","authSecretWord","authLoginError","authLoginSubmit","authFootnote","authSyncPanel","authSyncOpenButton","authSyncCloseButton","authSyncToken","authSyncGist","authSyncPublic","authSyncWarning","authSyncError","authSyncStatus","authSyncTestButton","authSyncSaveButton"].forEach(function(id){dom[id]=document.getElementById(id);});
 if (dom.authSmsRow === undefined || dom.authSmsRow === null) { var smsEl = document.querySelector(".auth-sms-row"); if (smsEl) dom.authSmsRow = smsEl; }
 
 /* Homework: unlimited entries pinned per class. Each entry is an item of the
