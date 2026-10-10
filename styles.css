@@ -3061,7 +3061,47 @@ input:not([type]), select, textarea { border-radius: var(--radius-sm); }
   .sync-notice{background:#33280f;border-color:#775734;color:#eec27a}
   .nav-wordmark,button.nav-item{color:#d6c5ad}
   button.nav-item.is-active{background:linear-gradient(125deg,#a45a2480,#7c3d1242);color:#ffe9c9;border-color:#facf9a70;box-shadow:inset 0 1px 1px #fad9a866}
-  button.secondary,button.version-badge{background:linear-gradient(150deg,#6b4a2ab3,#4a3category:2bb99);color:#faf3e8;border-color:rgba(250,214,170,.38)}
+  button.secondary,button.version-badge{background:linear-gradient(150deg,#6b4a2ab3,#4a332bb3);color:#faf3e8;border-color:rgba(250,214,170,.38)}
+
+  /* Autumn background: warm layered wash + drifting leaves (cheap composited animation) */
+  body {
+    background-image:
+      radial-gradient(ellipse at 12% 4%, rgba(244,162,89,.28), transparent 58%),
+      radial-gradient(ellipse at 88% 78%, rgba(194,65,12,.18), transparent 55%),
+      linear-gradient(160deg, #fdf3e0 0%, #f6e3c3 48%, #efd6ae 100%);
+    background-attachment: fixed;
+  }
+  .autumn-leaves { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+  .autumn-leaves span {
+    position: absolute; top: -8vh; display: inline-block;
+    font-size: 22px; opacity: .5; filter: saturate(1.15);
+    will-change: transform;
+    animation: leaf-fall linear infinite;
+  }
+  .autumn-leaves span:nth-child(1){left:6%;  animation-duration:19s; animation-delay:-2s;  font-size:18px}
+  .autumn-leaves span:nth-child(2){left:22%; animation-duration:24s; animation-delay:-9s;  font-size:26px}
+  .autumn-leaves span:nth-child(3){left:38%; animation-duration:17s; animation-delay:-5s;  font-size:15px}
+  .autumn-leaves span:nth-child(4){left:55%; animation-duration:26s; animation-delay:-14s; font-size:24px}
+  .autumn-leaves span:nth-child(5){left:71%; animation-duration:21s; animation-delay:-7s;  font-size:19px}
+  .autumn-leaves span:nth-child(6){left:86%; animation-duration:28s; animation-delay:-3s;  font-size:27px}
+  @keyframes leaf-fall {
+    0%   { transform: translate3d(0,-8vh,0) rotate(0deg); }
+    50%  { transform: translate3d(4vw,50vh,0) rotate(180deg); }
+    100% { transform: translate3d(-2vw,110vh,0) rotate(360deg); }
+  }
+  @media screen and (prefers-color-scheme: dark) {
+    body {
+      background-image:
+        radial-gradient(ellipse at 12% 4%, rgba(249,115,22,.14), transparent 58%),
+        radial-gradient(ellipse at 88% 78%, rgba(120,53,15,.22), transparent 55%),
+        linear-gradient(160deg, #1c130a 0%, #241708 50%, #171008 100%);
+    }
+    .autumn-leaves span { opacity: .32; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .autumn-leaves { display: none; }
+    body { background-attachment: scroll; }
+  }
   .journal-panel,.table-card,.lessons-panel,.sync-panel{background:linear-gradient(125deg,#7c3d127a,#4a2c1299);border-color:rgba(250,225,190,.25)}
   #attendanceTableCard th.today-column{background:#7c4a1a;color:#ffe9c9}
   .container{background:linear-gradient(145deg,#5a3a1c66,#2b1f1466);box-shadow:0 24px 80px #0d08034d, inset 0 1px 2px #fad9a840, 0 0 0 1px #8a6a4440}
