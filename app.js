@@ -85,7 +85,7 @@ var statusSymbols = { present: "✓", absent: "Н", late: "О", unmarked: "·" }
 var settingFields = ["maintenance", "maintenanceMessage", "maintenanceBy", "news", "versionText"];
 var monthNames = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
 var weekdayNames = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
-var state = { students: [], attendance: {}, settings: defaultSettings(), selectedMonth: getMonthString(new Date()), searchQuery: "", revision: 0, lastSyncedRevision: 0, devUnlocked: false, deviceMeta: {}, homework: [] };
+var state = { students: [], attendance: {}, settings: defaultSettings(), selectedMonth: getMonthString(new Date()), searchQuery: "", revision: 0, lastSyncedRevision: 0, devUnlocked: false, deviceMeta: {}, homework: [], absenceRequests: {} };
 var syncConfig = { enabled: false, token: "", gistId: "", isPublicGist: false, lastSync: 0, lastSyncStatus: "off", lastError: "" };
 var deviceId = "", logicalTime = 0, activeModal = null, previousFocus = null, modalStack = [];
 var attendanceModalState = { open: false, studentId: "", dateKey: "", currentStatus: STATUS_UNMARKED };
