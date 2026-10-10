@@ -38,6 +38,185 @@ var dom = {};
 ["userList", "refreshUserListButton", "studentName", "addStudentButton", "monthPicker", "previousMonthButton", "nextMonthButton", "todayButton", "monthTitle", "tableHead", "tableBody", "emptyMessage", "searchInput", "clearSearchButton", "searchResultsInfo", "noSearchResults", "toast", "syncStatus", "syncStatusText", "toggleSyncConfigButton", "syncConfig", "githubToken", "gistId", "gistPublicCheckbox", "publicGistWarning", "saveSyncConfigButton", "testConnectionButton", "disableSyncButton", "syncNowButton", "forcePushButton", "forcePullButton", "debugButton", "refreshDebugButton", "copyDebugButton", "debugBlock", "debugPre", "intervalSelect", "newsBanner", "newsText", "newsCloseButton", "versionButton", "versionButtonText", "journalEdition", "devPanelModal", "devCloseButton", "devExitButton", "devVersionTextInput", "devSaveVersionTextButton", "devResetVersionTextButton", "devToggleMaintenanceButton", "devMaintenanceMessageInput", "devSaveMaintenanceMessageButton", "devResetMaintenanceMessageButton", "devNewsInput", "devSaveNewsButton", "devClearNewsButton", "devClearAllButton", "maintenanceOverlay", "maintenanceMessageText", "maintenanceActiveBadge", "maintenanceDevAccessButton", "attendanceModal", "attCloseButton", "attStudentName", "attDateText", "attOptions", "localSaveStatus", "exportBackupButton", "importBackupButton", "importBackupInput", "restoreBackupButton", "printButton", "summaryStudents", "summaryPresent", "summaryAbsent", "summaryLate", "coverageInfo", "journalApp", "printMonthTitle"].forEach(function (id) { dom[id] = document.getElementById(id); });
 dom.studentNameInput = dom.studentName;
 var storage = accessibleStorage("localStorage"), sessStorage = accessibleStorage("sessionStorage");
+/* ---------- Educational institutions (учебные учреждения) ---------- */
+// The registry of institutions is global and lives in plain localStorage; the
+// journal itself is scoped per institution: every key this app writes goes
+// through instKey(), which prefixes it with the currently active institution
+// id. Switching an institution therefore swaps the ENTIRE dataset namespace —
+// same page, completely different data (students, classes, attendance, sync
+// config, settings unlock, backups). Legacy installs that predate institutions
+// keep working untouched: while the active id is "inst-main" keys stay exactly
+// as they were before.
+var INSTITUTIONS_KEY = "attendance_institutions";
+var ACTIVE_INSTITUTION_KEY = "attendance_active_institution";
+var INSTITUTION_NAME_KEY = "attendance_institution_name_main"; // rename of the default institution
+var DEFAULT_INSTITUTION_ID = "inst-main";
+function validInstId(id) { return typeof id === "string" && /^[a-zA-Z0-9_-]{1,64}$/.test(id); }
+function migrateInstitutions(list) {
+  var out = [], seen = {};
+  (Array.isArray(list) ? list : []).forEach(function (v) {
+    if (!v || !validInstId(v.id) || v.id === DEFAULT_INSTITUTION_ID || seen[v.id]) return;
+    seen[v.id] = true;
+    var name = typeof v.name === "string" ? v.name.trim().slice(0, 200) : "";
+    if (!name) return;
+    out.push({ id: v.id, name: name, createdAt: Number(v.createdAt) > 0 ? Number(v.createdAt) : Date.now() });
+  });
+  return out;
+}
+function loadInstitutions() {
+  if (!storage) return [];
+  try { return migrateInstitutions(JSON.parse(storage.getItem(INSTITUTIONS_KEY) || "[]")); } catch (e) { return []; }
+}
+function saveInstitutions(list) {
+  if (!storage) throw new Error("Браузер не сохраняет данные учреждений");
+  storage.setItem(INSTITUTIONS_KEY, JSON.stringify(migrateInstitutions(list)));
+  renderInstitutionList();
+}
+function getActiveInstitutionId() {
+  // Fixed at load time on purpose: all module-level init constants (deviceId,
+  // logicalTime, initial state) are built from the storage of the institution
+  // active in the URL/tab; switching to another institution reloads the page.
+  if (typeof window !== "undefined") {
+    try {
+      var fromUrl = new URLSearchParams(window.location.search || "").get("inst");
+      if (validInstId(fromUrl)) return fromUrl;
+    } catch (e) {}
+  }
+  if (storage) { try { var saved = storage.getItem(ACTIVE_INSTITUTION_KEY); if (validInstId(saved)) return saved; } catch (e) {} }
+  return DEFAULT_INSTITUTION_ID;
+}
+var ACTIVE_INSTITUTION_ID = getActiveInstitutionId();
+function institutionNameById(id) {
+  if (id === DEFAULT_INSTITUTION_ID) {
+    try { var custom = storage && storage.getItem(INSTITUTION_NAME_KEY); if (typeof custom === "string" && custom.trim()) return custom.trim().slice(0, 200); } catch (e) {}
+    return "Основное учреждение";
+  }
+  var found = loadInstitutions().find(function (i) { return i.id === id; });
+  return found ? found.name : "Учреждение " + id;
+}
+// Namespace every persisted key by the active institution. Default institution
+// keeps the historical un-prefixed keys so existing journals open unchanged.
+function instKey(key) { return ACTIVE_INSTITUTION_ID === DEFAULT_INSTITUTION_ID ? key : ACTIVE_INSTITUTION_ID + "_" + key; }
+if (ACTIVE_INSTITUTION_ID !== DEFAULT_INSTITUTION_ID) {
+  STORAGE_KEY = instKey(STORAGE_KEY); SYNC_CONFIG_KEY = instKey(SYNC_CONFIG_KEY); DEVICE_ID_KEY = instKey(DEVICE_ID_KEY);
+  INTERVAL_KEY = instKey(INTERVAL_KEY); SETTINGS_UNLOCK_KEY = instKey(SETTINGS_UNLOCK_KEY); SETTINGS_CODE_SET_KEY = instKey(SETTINGS_CODE_SET_KEY);
+  BACKUP_KEY = instKey(BACKUP_KEY); NEWS_DISMISS_KEY = instKey(NEWS_DISMISS_KEY); AUTH_ACCOUNTS_KEY = instKey(AUTH_ACCOUNTS_KEY);
+  AUTH_SESSION_KEY = instKey(AUTH_SESSION_KEY);
+}
+function switchToInstitution(id) {
+  if (!validInstId(id)) return false;
+  if (id === ACTIVE_INSTITUTION_ID) { showToast("Вы уже в этом учреждении", "info"); return false; }
+  flushSaveLocal();
+  try { if (storage) storage.setItem(ACTIVE_INSTITUTION_KEY, id); } catch (e) {}
+  var url = new URL(window.location.href);
+  if (id === DEFAULT_INSTITUTION_ID) url.searchParams.delete("inst"); else url.searchParams.set("inst", id);
+  window.location.assign(url.href);
+  return true;
+}
+function renderInstitutionList() {
+  var container = dom.institutionList; if (!container) return;
+  var items = loadInstitutions();
+  container.textContent = "";
+  function makeRow(id, name, isDefault, canDelete) {
+    var row = document.createElement("div"); row.className = "device-row institution-row";
+    var info = document.createElement("div");
+    var label = document.createElement("span"); label.className = "device-name"; label.textContent = name; info.appendChild(label);
+    if (isDefault) { var b = document.createElement("span"); b.className = "device-badge"; b.textContent = "основное"; info.appendChild(b); }
+    if (id === ACTIVE_INSTITUTION_ID) { var cur = document.createElement("span"); cur.className = "device-badge"; cur.textContent = "открыто"; info.appendChild(cur); }
+    var count = null;
+    try { var raw = storage && storage.getItem(instKeyFor(id, STORAGE_KEY)); if (raw) { var parsed = JSON.parse(raw); count = (parsed.students || []).filter(function (s) { return s && !s.deleted; }).length; } } catch (e) {}
+    var meta = document.createElement("span"); meta.className = "device-seen";
+    meta.textContent = count === null ? "Данных пока нет" : "Учеников в журнале: " + count;
+    row.append(info, meta);
+    var open = document.createElement("button"); open.type = "button"; open.className = "secondary institution-open";
+    open.dataset.institutionId = id; open.textContent = id === ACTIVE_INSTITUTION_ID ? "Текущее" : "Открыть журнал";
+    open.disabled = id === ACTIVE_INSTITUTION_ID;
+    row.appendChild(open);
+    if (canManage) {
+      var ren = document.createElement("button"); ren.type = "button"; ren.className = "secondary institution-rename";
+      ren.dataset.institutionId = id; ren.textContent = "Переименовать";
+      ren.title = "Изменить название учреждения";
+      row.appendChild(ren);
+    }
+    if (canDelete) {
+      var del = document.createElement("button"); del.type = "button"; del.className = "danger institution-remove";
+      del.dataset.institutionId = id; del.textContent = "Удалить";
+      del.title = "Удалить учреждение и все его данные с этого устройства";
+      row.appendChild(del);
+    }
+    return row;
+  }
+  var canManage = effectivePermissions().canManageDevices;
+  container.appendChild(makeRow(DEFAULT_INSTITUTION_ID, institutionNameById(DEFAULT_INSTITUTION_ID), true, false));
+  items.forEach(function (inst) { container.appendChild(makeRow(inst.id, inst.name, false, canManage)); });
+  if (!items.length) {
+    var hint = document.createElement("p"); hint.className = "help-text";
+    hint.textContent = "Других учреждений пока нет — добавьте новое кнопкой выше.";
+    container.appendChild(hint);
+  }
+}
+function instKeyFor(id, key) { return id === DEFAULT_INSTITUTION_ID ? key : id + "_" + key; }
+// Rename: the default institution is stored under a fixed display name, so its
+// rename is persisted as a dedicated override key. Other institutions are
+// renamed inside the registry list. Renaming never touches journal data keys.
+function renameInstitution(id) {
+  if (!effectivePermissions().canManageDevices) { showToast("Переименование доступно учителю или тех. администрации", "warning"); return; }
+  var currentName = institutionNameById(id);
+  var name = window.prompt("Новое название учреждения", currentName); if (name === null) return;
+  name = name.trim().replace(/\s+/g, " ");
+  if (!name || name.length > 200) { showToast("Введите название до 200 символов", "warning"); return; }
+  if (name.toLowerCase() === currentName.toLowerCase()) return;
+  if (id === DEFAULT_INSTITUTION_ID) {
+    var others = loadInstitutions();
+    if (others.some(function (i) { return i.name.toLowerCase() === name.toLowerCase(); })) { showToast("Такое учреждение уже есть", "warning"); return; }
+    try { storage.setItem(INSTITUTION_NAME_KEY, name); } catch (e) { showToast("Браузер не сохранил название: " + e.message, "error"); return; }
+    renderInstitutionList(); updateInstitutionBanner();
+    showToast("Основное учреждение переименовано в «" + name + "»", "success");
+    return;
+  }
+  var items = loadInstitutions();
+  if (institutionNameById(DEFAULT_INSTITUTION_ID).toLowerCase() === name.toLowerCase() || items.some(function (i) { return i.id !== id && i.name.toLowerCase() === name.toLowerCase(); })) { showToast("Такое учреждение уже есть", "warning"); return; }
+  var found = items.find(function (i) { return i.id === id; });
+  if (!found) { showToast("Учреждение не найдено — обновите список", "warning"); renderInstitutionList(); return; }
+  found.name = name; saveInstitutions(items); updateInstitutionBanner();
+  showToast("Учреждение переименовано в «" + name + "»", "success");
+}
+function updateInstitutionBanner() {
+  var banner = dom.institutionBanner; if (!banner) return;
+  var text = dom.institutionBannerText;
+  if (ACTIVE_INSTITUTION_ID === DEFAULT_INSTITUTION_ID && !storage) { banner.hidden = true; return; }
+  var name = institutionNameById(ACTIVE_INSTITUTION_ID);
+  if (text) text.textContent = "Учреждение: " + name;
+  banner.hidden = !(name && name !== "Основное учреждение") && !(typeof window !== "undefined" && new URLSearchParams(window.location.search || "").get("inst"));
+  // Show the banner whenever an explicit non-default institution is active.
+  if (ACTIVE_INSTITUTION_ID !== DEFAULT_INSTITUTION_ID) banner.hidden = false;
+}
+function addInstitution() {
+  if (!effectivePermissions().canManageDevices) { showToast("Добавление учреждений доступно учителю или тех. администрации", "warning"); return; }
+  var name = window.prompt("Название учебного учреждения"); if (name === null) return;
+  name = name.trim().replace(/\s+/g, " ");
+  if (!name || name.length > 200) { showToast("Введите название до 200 символов", "warning"); return; }
+  var items = loadInstitutions();
+  if (institutionNameById(DEFAULT_INSTITUTION_ID).toLowerCase() === name.toLowerCase() || items.some(function (i) { return i.name.toLowerCase() === name.toLowerCase(); })) { showToast("Такое учреждение уже есть", "warning"); return; }
+  var entry = { id: generateId(), name: name, createdAt: Date.now() };
+  items.push(entry); saveInstitutions(items);
+  showToast("Учреждение «" + name + "» добавлено. Откройте его кнопкой «Открыть журнал».", "success");
+}
+function removeInstitution(id) {
+  if (!effectivePermissions().canManageDevices) { showToast("Удаление учреждений доступно учителю или тех. администрации", "warning"); return; }
+  if (id === DEFAULT_INSTITUTION_ID || id === ACTIVE_INSTITUTION_ID) { showToast("Нельзя удалить основное или открытое сейчас учреждение", "warning"); return; }
+  var items = loadInstitutions(), inst = items.find(function (i) { return i.id === id; });
+  if (!inst) { showToast("Учреждение не найдено — обновите список", "warning"); renderInstitutionList(); return; }
+  if (!window.confirm("Удалить учреждение «" + inst.name + "»?\nЕго журнал (ученики, отметки, настройки синхронизации) будет стёрт с ЭТОГО устройства. Данные в Gist другого устройства останутся.")) return;
+  var word = window.prompt("Необратимое действие.\nДля подтверждения введите название учреждения точно:\n" + inst.name);
+  if (word === null) { showToast("Удаление отменено", "info"); return; }
+  if (word.trim().toLowerCase() !== inst.name.trim().toLowerCase()) { showToast("Название не совпало — удаление отменено", "info"); return; }
+  var suffixes = ["_attendance_diary_data", "_attendance_sync_config", "_attendance_device_id", "_attendance_poll_interval", "_attendance_settings_unlocked", "_attendance_settings_code_set", "_attendance_recovery_backups", "_attendance_news_dismissed", "_attendance_auth_accounts", "_attendance_auth_session"];
+  try { suffixes.forEach(function (s) { storage.removeItem(id + s); }); } catch (e) { showToast("Не удалось стереть данные учреждения: " + e.message, "error"); return; }
+  saveInstitutions(items.filter(function (i) { return i.id !== id; }));
+  try { if (storage.getItem(ACTIVE_INSTITUTION_KEY) === id) storage.removeItem(ACTIVE_INSTITUTION_KEY); } catch (e) {}
+  showToast("Учреждение «" + inst.name + "» удалено вместе с его данными на этом устройстве.", "success");
+}
 
 function accessibleStorage(name) {
   try { var value = window[name], key = "attendance_probe_" + Math.random(); value.setItem(key, "1"); value.removeItem(key); return value; } catch (e) { return null; }
@@ -998,6 +1177,7 @@ function refreshDevPanel() {
   renderDeviceList();
   renderUserList();
   renderClassList();
+  renderInstitutionList();
   // Account section: show who is logged in on this device.
   var session = currentAuthSession();
   if (dom.authAccountInfo) dom.authAccountInfo.textContent = session
@@ -1105,6 +1285,23 @@ function wireCoreEvents() {
     if (!btn || !dom.classList.contains(btn)) return;
     removeClass(btn.dataset.classId);
   });
+  if (dom.classList) dom.classList.addEventListener("click", function (e) {
+    var btn = e.target.closest(".class-rename");
+    if (!btn || !dom.classList.contains(btn)) return;
+    renameClass(btn.dataset.classId);
+  });
+  /* Institutions: open / rename / delete rows in the settings panel */
+  if (dom.institutionList) dom.institutionList.addEventListener("click", function (e) {
+    var container = dom.institutionList;
+    var openBtn = e.target.closest(".institution-open");
+    if (openBtn && container.contains(openBtn)) { switchToInstitution(openBtn.dataset.institutionId); return; }
+    var renBtn = e.target.closest(".institution-rename");
+    if (renBtn && container.contains(renBtn)) { renameInstitution(renBtn.dataset.institutionId); return; }
+    var delBtn = e.target.closest(".institution-remove");
+    if (delBtn && container.contains(delBtn)) { removeInstitution(delBtn.dataset.institutionId); return; }
+  });
+  if (dom.addInstitutionButton) dom.addInstitutionButton.addEventListener("click", addInstitution);
+  if (dom.refreshInstitutionListButton) dom.refreshInstitutionListButton.addEventListener("click", function () { renderInstitutionList(); showToast("Список учреждений обновлён", "info"); });
   dom.newsCloseButton.addEventListener("click", function () { try { if (storage) storage.setItem(NEWS_DISMISS_KEY, state.settings.news.trim()); } catch (e) {} dom.newsBanner.classList.remove("visible"); });
   dom.exportBackupButton.addEventListener("click", exportBackup); dom.importBackupButton.addEventListener("click", function () { dom.importBackupInput.click(); }); dom.restoreBackupButton.addEventListener("click", restoreBackup); dom.printButton.addEventListener("click", function () { window.print(); });
   dom.importBackupInput.addEventListener("change", async function (e) {
@@ -1344,6 +1541,8 @@ var projectLists = ['classes', 'subjects', 'lessons'];
 var homeworkListKey = 'homework'; // separate synced list: unlimited homework entries per class
 var projectDomIds = ['classList','refreshClassListButton','classPicker','addClassButton','reportsButton','lessonsPanel','lessonDate','lessonSubject','lessonEnd','lessonStatus','lessonCreate','addSubjectButton','lessonList','lessonModal','lessonTitle','lessonRoster','lessonClose','lessonState','lessonDelete','studentClassPicker','studentClassMove'];
 projectDomIds.forEach(function(id) { dom[id] = document.getElementById(id); });
+['institutionList','addInstitutionButton','refreshInstitutionListButton','institutionBanner','institutionBannerText'].forEach(function(id){ dom[id]=document.getElementById(id); });
+updateInstitutionBanner();
 state.settings = cloneSettings(state.settings);
 state.classes = [{ id: 'class-main', name: 'Основной класс', updatedAt: 0, actor: '', deleted: false }];
 state.subjects = []; state.lessons = []; state.homework = []; state.lessonMarks = {}; state.selectedClass = 'class-main';
@@ -1440,8 +1639,31 @@ function renderClassList(){
     remove.disabled=!canManage||cls.id==='class-main';
     remove.title=cls.id==='class-main'?'Базовый класс «'+cls.name+'» нельзя удалить':(canManage?'Удалить класс вместе с учениками, занятиями и заданиями':'Удалять классы могут только учитель или тех. администрация');
     row.appendChild(remove);
+    var rename=document.createElement('button'); rename.type='button'; rename.className='secondary class-rename';
+    rename.dataset.classId=cls.id; rename.textContent='Переименовать';
+    rename.disabled=!canManage;
+    rename.title=canManage?'Изменить название класса (синхронизируется на всех устройствах)':'Переименовывать классы могут только учитель или тех. администрация';
+    row.appendChild(rename);
     container.appendChild(row);
   });
+}
+// Rename a class in place (works for the base 'class-main' too). The name is a
+// normal synced record field, so the new name merges to every connected device.
+function renameClass(id){
+  if(!effectivePermissions().canEditJournal){showToast('Переименование классов доступно учителю или тех. администрации','warning');return false;}
+  var cls=(state.classes||[]).find(function(c){return c.id===id&&!c.deleted;});
+  if(!cls){showToast('Класс не найден — обновите список','warning');renderClassList();return false;}
+  var name=window.prompt('Название класса',cls.name); if(name===null)return false;
+  name=name.trim().replace(/\s+/g,' ');
+  if(!name||name.length>200){showToast('Введите название до 200 символов','warning');return false;}
+  if(name.toLowerCase()===cls.name.trim().toLowerCase())return false;
+  var dup=(state.classes||[]).some(function(c){return !c.deleted&&c.id!==id&&c.name.trim().toLowerCase()===name.toLowerCase();});
+  if(dup){showToast('Класс с таким названием уже есть','warning');return false;}
+  cls.name=name;cls.updatedAt=nextTimestamp();cls.actor=deviceId;
+  commitProject(['classes/'+cls.id]);
+  if(activeModal===dom.devPanelModal)renderClassList();
+  showToast('Класс переименован в «'+name+'»','success');
+  return true;
 }
 function removeClass(id){
   var perms=effectivePermissions();
