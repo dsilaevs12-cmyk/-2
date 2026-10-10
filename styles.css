@@ -2263,11 +2263,15 @@ input[type="date"]:focus { outline: none; border-color: var(--primary); box-shad
     --late: #ffebc9; --late-text: #8b530c; --late-border: #e7cb92; --error: #a92c48; --error-soft: #fbe0e5;
     --weekend: #f9efe7; --today-bg: #f6e8d9; --today-text: #874903; --today-border: #d4af85;
     --row-hover: #f9eae2; --row-hover-border: #dcbc97;
-    --glass: rgba(246, 251, 255, .54); --glass-strong: rgba(246, 251, 255, .83); --glass-table: rgba(247, 251, 254, .78);
-    --glass-line: rgba(255, 255, 255, .9); --glass-edge: rgba(119, 170, 195, .34); --glass-highlight: rgba(255, 255, 255, .88);
-    --glass-shadow: 0 8px 24px rgba(44, 95, 121, .09), inset 0 1px 1px rgba(255, 255, 255, .95), inset 0 -1px 1px rgba(79, 137, 166, .12);
-    --glass-field: rgba(250, 253, 255, .68); --glass-button: linear-gradient(170deg, #c38743 0%, #9f4115 47%, #8e360d 100%); --button-text: #fff;
-    --shadow-focus: 0 0 0 3px rgba(29, 117, 150, .22);
+    /* BUGFIX (pre-release audit): these glass tokens still carried the legacy
+       BLUE tints (rgb 246/251/255, 119/170/195, 44/95/121...) which made cards,
+       panels and modals look blue-grey on top of the autumn background.
+       Warmed to parchment/amber equivalents. */
+    --glass: rgba(255, 248, 236, .54); --glass-strong: rgba(255, 248, 236, .83); --glass-table: rgba(255, 249, 240, .78);
+    --glass-line: rgba(255, 255, 255, .9); --glass-edge: rgba(194, 132, 74, .34); --glass-highlight: rgba(255, 255, 255, .88);
+    --glass-shadow: 0 8px 24px rgba(122, 74, 33, .09), inset 0 1px 1px rgba(255, 255, 255, .95), inset 0 -1px 1px rgba(166, 106, 49, .12);
+    --glass-field: rgba(255, 251, 243, .68); --glass-button: linear-gradient(170deg, #c38743 0%, #9f4115 47%, #8e360d 100%); --button-text: #fff;
+    --shadow-focus: 0 0 0 3px rgba(143, 78, 4, .22);
     --radius-sm: 14px; --radius-md: 18px; --radius-lg: 24px; --radius-xl: 28px;
   }
   body {
@@ -2277,8 +2281,9 @@ input[type="date"]:focus { outline: none; border-color: var(--primary); box-shad
   }
   .container {
     position: relative; width: calc(100% - 48px); max-width: 1460px; margin: 28px auto; padding: 28px;
-    border: 1px solid var(--glass-line); border-radius: 34px; background: linear-gradient(145deg, rgba(255,255,255,.48), rgba(217,237,247,.22));
-    box-shadow: 0 22px 68px rgba(37,85,113,.16), inset 0 0 0 1px rgba(255,255,255,.4), inset 0 2px 3px #ffffffb3, 0 0 0 1px var(--glass-edge);
+    border: 1px solid var(--glass-line); border-radius: 34px;
+    background: linear-gradient(145deg, rgba(255,255,255,.48), rgba(247,224,190,.22));
+    box-shadow: 0 22px 68px rgba(113,74,37,.16), inset 0 0 0 1px rgba(255,255,255,.4), inset 0 2px 3px #ffffffb3, 0 0 0 1px var(--glass-edge);
   }
   .page-header { align-items:center; border:0; margin:0 0 18px; padding:0; gap:18px; }
   .page-header h1 { font-size:clamp(29px,3vw,43px); font-weight:700; letter-spacing:-.04em; margin-bottom:4px; }
@@ -2477,9 +2482,12 @@ input[type="date"]:focus { outline: none; border-color: var(--primary); box-shad
     --border:#805d42; --border-subtle:#6f492c; --border-strong:#b68369;
     --success:#a0e8c3; --success-soft:#523616; --absent:#583447; --absent-text:#ffc1cc; --absent-border:#8c5c70; --late:#53452d; --late-text:#ffdda5; --late-border:#897448; --error:#ffc1cc; --error-soft:#583447;
     --weekend:#533519; --today-bg:#643518; --today-text:#ffdfba; --today-border:#bb7a5a; --row-hover:#663d21;
-    --glass:rgba(30,57,79,.68); --glass-strong:rgba(24,48,68,.94); --glass-table:rgba(22,46,64,.92);
-    --glass-line:rgba(188,225,244,.3); --glass-edge:rgba(5,25,43,.42); --glass-highlight:rgba(200,231,247,.27);
-    --glass-field:rgba(41,71,93,.76); --glass-shadow:0 8px 24px #2a150233, inset 0 1px 1px #ffddc933, inset 0 -1px 1px #2c170033;
+    /* BUGFIX (pre-release audit): dark-theme glass tokens were still NAVY BLUE
+       (30/57/79, 24/48/68, 188/225/244...) — panels and modals looked blue in
+       dark mode over the autumn background. Warmed to deep-brown equivalents. */
+    --glass:rgba(74,50,26,.68); --glass-strong:rgba(58,39,18,.94); --glass-table:rgba(52,35,16,.92);
+    --glass-line:rgba(244,214,170,.3); --glass-edge:rgba(42,24,8,.42); --glass-highlight:rgba(247,222,188,.27);
+    --glass-field:rgba(90,62,34,.76); --glass-shadow:0 8px 24px #2a150233, inset 0 1px 1px #ffddc933, inset 0 -1px 1px #2c170033;
     --glass-button:linear-gradient(165deg,#a5613b,#7e431d 53%,#743b15); --button-text:#fff8f5;
   }
   body { background-image:radial-gradient(ellipse at 3% 12%, #76481ec2, transparent 40%), radial-gradient(ellipse at 84% 6%, #6f5a4170, transparent 38%), radial-gradient(ellipse at 80% 87%, #6930188a, transparent 45%), linear-gradient(125deg, transparent 12%, #93684d26 27%, transparent 40%, #7b552d40 60%, transparent 75%); }
