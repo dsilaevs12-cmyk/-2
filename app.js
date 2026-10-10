@@ -726,8 +726,19 @@ async function fetchAccountsFromGist(config) {
   if (!config.token) {
     // Read-only path: anonymous API calls are blocked by CORS, so scrape the
     // public Gist page like the journal reader does.
-    var anonFiles = await fetchPublicGistFiles(config);
+    var anonFiles = await fetchPublicGistFiles(config, { filePattern: /^accounts\.device\.[a-zA-Z0-9_.-]+\.json$/ });
     names = Object.keys(anonFiles).filter(function (name) { return /^accounts\.device\.[a-zA-Z0-9_.-]+\.json$/.test(name); }).sort();
+    if (!names.length) {
+      // The embed page only links the first files of a Gist, so account lists
+      // can be missing from the enumeration. Probe known device ids directly;
+      // never fail the whole sync because of auxiliary files.
+      try {
+        var journalFiles = await fetchPublicGistFiles(config, { filePattern: new RegExp("^(" + GIST_FILENAME + "|attendance\\.device\\.[a-zA-Z0-9_.-]+\\.json)$") });
+        var fallbackFiles = await fetchPublicAccountFilesFallback(config, config.gistId, Object.keys(journalFiles));
+        names = Object.keys(fallbackFiles).sort();
+        anonFiles = fallbackFiles;
+      } catch (error) { if (error.stale) throw error; names = []; }
+    }
     var anonResult = [];
     for (var i = 0; i < names.length; i++) {
       var parsedAnon = null;
@@ -778,8 +789,18 @@ async function pushAccountsToGist(accounts, config) {
 // from the same Gist, merge by timestamps and write the result locally.
 async function syncAccountsOnce(options) {
   options = options || {};
-  var config = syncOperationConfig();
-  if (!syncConfigured()) { var missing = new Error("Синхронизация не подключена"); missing.noUpload = true; throw missing; }
+  var config;
+  if (options.token !== undefined || options.gistId !== undefined) {
+    // Explicit token/gist (e.g. typed into the login-menu sync window before
+    // the settings were saved) override the stored connection for this run.
+    config = syncOperationConfig(
+      options.token !== undefined ? options.token : syncConfig.token,
+      options.gistId !== undefined ? options.gistId : syncConfig.gistId
+    );
+  } else {
+    config = syncOperationConfig();
+    if (!syncConfigured()) { var missing = new Error("Синхронизация не подключена"); missing.noUpload = true; throw missing; }
+  }
   var mergedList = null, uploaded = false, uploadError = null;
   if (config.token && !options.pullOnly) {
     try { await pushAccountsToGist(loadLocalSyncAccounts(), config); uploaded = true; }
@@ -933,7 +954,17 @@ async function handleAuthSyncSave() {
     // Pull the journal right away so a fresh device already shows the data
     // while the user is still on the login screen.
     try { await fullSync("manual"); } catch (error) {}
-    dom.authSyncStatus.textContent = "Подключение сохранено. Журнал загружен с устройства-источника — войдите, чтобы продолжить.";
+    // ...and pull the account lists from the other devices too, so an account
+    // registered on the first device can log in here immediately. Run with
+    // the values from this window (they may differ from anything saved
+    // before) and ignore failures — the regular sync cycles retry silently.
+    var accountsPulled = 0;
+    try {
+      var accountResult = await syncAccountsOnce({ token: proposed.token, gistId: proposed.gistId, pullOnly: !proposed.token });
+      accountsPulled = accountResult.added || 0;
+    } catch (error) {}
+    dom.authSyncStatus.textContent = "Подключение сохранено. Журнал и " + accountsPulled + " аккаунт(ов) загружены с другого устройства — войдите, чтобы продолжить.";
+    if (accountsPulled) switchAuthTab("login");
     showToast("Синхронизация подключена из окна входа.", "success");
   } catch (error) { if (!error.stale) dom.authSyncError.textContent = error.message || "Не удалось сохранить подключение."; }
   finally { setAuthSyncBusy(false); }
@@ -1022,7 +1053,18 @@ async function handleAuthLogin(event) {
   var accounts = loadAuthAccounts();
   var account = null;
   for (var i = 0; i < accounts.length; i++) { if (authNormalizeName(accounts[i].fullName) === authNormalizeName(name)) { account = accounts[i]; break; } }
-  if (!account) { d.authLoginError.textContent = "Аккаунт не найден. Зарегистрируйтесь на этом устройстве."; switchAuthTab("register"); d.authRegLast.value = name.split(" ").slice(1).join(" "); d.authRegFirst.value = name.split(" ")[0] || ""; return; }
+  if (!account && syncConfigured()) {
+    // The list on this device may simply be outdated: give the account sync
+    // one immediate chance before telling the user the account is missing.
+    try {
+      var pullResult = await syncAccountsOnce({ pullOnly: !syncConfig.token });
+      if (pullResult.added || pullResult.removed) {
+        accounts = loadAuthAccounts();
+        for (var k = 0; k < accounts.length; k++) { if (authNormalizeName(accounts[k].fullName) === authNormalizeName(name)) { account = accounts[k]; break; } }
+      }
+    } catch (error) { /* offline or bad connection — fall through to the message below */ }
+  }
+  if (!account) { d.authLoginError.textContent = "Аккаунт не найден на этом устройстве. Подключите синхронизацию ниже («Синхронизировать с другим устройством») или зарегистрируйтесь."; switchAuthTab("register"); d.authRegLast.value = name.split(" ").slice(1).join(" "); d.authRegFirst.value = name.split(" ")[0] || ""; return; }
   // Step 1: verify the main password.
   if (!authGateState.pending || authGateState.pending.accountId !== account.id || authGateState.pending.step !== "2fa") {
     d.authLoginSubmit.disabled = true; d.authLoginSubmit.textContent = "Проверяем…";
@@ -2483,7 +2525,7 @@ function describeGithubError(status) {
   return "Ошибка GitHub (" + status + ")";
 }
 // Anonymous read of a public Gist without a token (see fetchPublicGistFiles).
-async function fetchPublicGistFiles(config) {
+async function fetchPublicGistFiles(config, options) {
   // Anonymous read of a public Gist works from ANY domain and needs NO token:
   // gist.githubusercontent.com answers with "Access-Control-Allow-Origin: *",
   // so the browser never blocks these requests. Strategy:
@@ -2492,6 +2534,9 @@ async function fetchPublicGistFiles(config) {
   //    mode and read the Location header (opaque-redirect trick, no CORS);
   // 3) download every file's raw content directly from gist.githubusercontent.com.
   // api.github.com and personal access tokens are only needed for WRITING.
+  // options.filePattern widens the enumeration to account files as well.
+  options = options || {};
+  var filePattern = options.filePattern || new RegExp("^(" + GIST_FILENAME + "|attendance\\.device\\.[a-zA-Z0-9_.-]+\\.json|accounts\\.device\\.[a-zA-Z0-9_.-]+\\.json)$");
   var gistId = String(config.gistId || "").trim();
   if (!/^[a-f0-9]{5,64}$/i.test(gistId)) throw new Error("Введите правильный ID публичного Gist.");
 
@@ -2516,6 +2561,9 @@ async function fetchPublicGistFiles(config) {
   }
 
   // Step 1: collect candidate file names from any GitHub page we can reach.
+  // The same public Gist stores journal files (attendance.device.*.json) and
+  // account files (accounts.device.*.json); harvestNames matches whatever
+  // filePattern describes, so both readers share this enumeration logic.
   function harvestNames(html) {
     var found = [];
     var patterns = [
@@ -2528,7 +2576,7 @@ async function fetchPublicGistFiles(config) {
         var name;
         try { name = decodeURIComponent(match[1]); } catch (error) { name = match[1]; }
         name = name.replace(/[#?].*$/, "");
-        if ((name === GIST_FILENAME || /^attendance\.device\.[a-zA-Z0-9_.-]+\.json$/.test(name)) && found.indexOf(name) === -1) found.push(name);
+        if (filePattern.test(name) && found.indexOf(name) === -1) found.push(name);
       }
     }
     return found;
@@ -2551,13 +2599,15 @@ async function fetchPublicGistFiles(config) {
       }
     } catch (error) { /* keep the empty list; the friendly message below explains it */ }
   }
-  // Step 3: download every journal file straight from the CORS-open raw host.
+  // Step 3: download every file straight from the CORS-open raw host.
   var result = {};
   for (var ni = 0; ni < names.length; ni++) {
     var fileName = names[ni];
     var rawResponse = await anonFetch("https://gist.githubusercontent.com/" + encodeURIComponent(gistId) + "/raw/" + encodeURIComponent(fileName), {});
     if (!rawResponse.ok) {
-      throw new Error("Не удалось скачать файл «" + fileName + "» из публичного Gist (код " + rawResponse.status + "). Проверьте, что Gist публичный.");
+      // A single unavailable auxiliary file (e.g. one device's account list)
+      // must not break the whole read — journal files are downloaded anyway.
+      continue;
     }
     result[fileName] = { content: rawResponse.text, truncated: false, raw_url: "" };
   }
@@ -2565,6 +2615,44 @@ async function fetchPublicGistFiles(config) {
     throw new Error("Не удалось найти файлы журнала в публичном Gist. Убедитесь, что синхронизация с этим Gist уже выполнялась с токеном (например, кнопкой «Отправить изменения»), или введите токен для непубличного Gist.");
   }
   return result;
+}
+// Anonymous fallback for the account list of a public Gist. The embed page
+// only links the first few files, so when the regular enumeration finds no
+// accounts.device.*.json we probe the CORS-open raw host directly with this
+// device id plus the ids of every journal file present in the Gist (devices
+// write both files under the same name). Failures stay silent: an empty list
+// simply means "no accounts uploaded yet".
+async function fetchPublicAccountFilesFallback(config, gistId, journalFileNames) {
+  async function anonRaw(url) {
+    var controller = new AbortController();
+    syncRuntime.controllers.add(controller);
+    var timer = setTimeout(function () { controller.abort(); }, 15000);
+    try {
+      var response = await fetch(url, { method: "GET", signal: controller.signal, cache: "no-store" });
+      var body = await response.text();
+      syncCheckGeneration(config);
+      return { ok: response.ok, text: body };
+    } catch (error) {
+      syncCheckGeneration(config);
+      return { ok: false, text: "" };
+    } finally { clearTimeout(timer); syncRuntime.controllers.delete(controller); }
+  }
+  var writers = [];
+  function addWriter(value) {
+    var writer = String(value || "").replace(/[^a-zA-Z0-9_-]/g, "");
+    if (writer && writers.indexOf(writer) === -1) writers.push(writer);
+  }
+  addWriter(deviceId || getDeviceId());
+  (journalFileNames || []).forEach(function (name) {
+    var match = /^attendance\.device\.([a-zA-Z0-9_.-]+)\.json$/.exec(name);
+    if (match) addWriter(match[1]);
+  });
+  var found = {};
+  for (var wi = 0; wi < writers.length; wi++) {
+    var raw = await anonRaw("https://gist.githubusercontent.com/" + encodeURIComponent(gistId) + "/raw/accounts.device." + writers[wi] + ".json");
+    if (raw.ok && raw.text && raw.text.trim()) found["accounts.device." + writers[wi] + ".json"] = { content: raw.text, truncated: false, raw_url: "" };
+  }
+  return found;
 }
 async function syncFetch(url, options, config) {
   syncCheckGeneration(config);
@@ -2633,7 +2721,9 @@ async function fetchFromGist(config, options) {
   // under strict CSP, so we read the public Gist page instead, which always
   // allows cross-origin access and embeds full file contents.
   if (!config.token) {
-    var anonFiles = await fetchPublicGistFiles(config);
+    // Journal-only pattern: account files live in the same Gist but are read
+    // by fetchAccountsFromGist, not merged into the journal payload.
+    var anonFiles = await fetchPublicGistFiles(config, { filePattern: new RegExp("^(" + GIST_FILENAME + "|attendance\\.device\\.[a-zA-Z0-9_.-]+\\.json)$") });
     var anonNames = Object.keys(anonFiles).filter(function (name) {
       return name === GIST_FILENAME || /^attendance\.device\.[a-zA-Z0-9_.-]+\.json$/.test(name);
     }).sort();
