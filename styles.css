@@ -84,8 +84,7 @@
       --row-hover-border: #fdba74;
     }
 
-    @media (prefers-color-scheme: dark) {
-      html:not([data-theme="light"]) {
+    html[data-theme="dark"] {
         /* Autumn gamma palette, dark variant */
         --primary: #f97316;
         --primary-dark: #ea580c;
@@ -136,7 +135,6 @@
         --row-hover: #362918;
         --row-hover-border: #f97316;
       }
-    }
 
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html {
@@ -314,6 +312,12 @@
         box-shadow: 0 4px 18px rgba(244, 63, 94, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.25);
       }
     }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] .version-badge {
+        background: linear-gradient(135deg, #fbbf24 0%, #f43f5e 50%, #ec4899 100%);
+        box-shadow: 0 4px 18px rgba(244, 63, 94, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+      }
+
 
     .news-banner {
       background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
@@ -345,6 +349,14 @@
         box-shadow: 0 4px 18px rgba(120, 53, 15, 0.4);
       }
     }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] .news-banner {
+        background: linear-gradient(135deg, #78350f 0%, #92400e 100%);
+        border-color: #b45309;
+        color: #fef3c7;
+        box-shadow: 0 4px 18px rgba(120, 53, 15, 0.4);
+      }
+
 
     .news-content {
       display: flex;
@@ -486,6 +498,11 @@
       button.secondary { background: #3d2f1f; color: var(--text); border-color: #57432b; }
       button.secondary:hover { background: #57432b; }
     }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] button.secondary { background: #3d2f1f; color: var(--text); border-color: #57432b; }
+
+html[data-theme="dark"] button.secondary:hover { background: #57432b; }
+
 
     button.danger {
       color: var(--absent-text);
@@ -501,6 +518,11 @@
       button.danger { background: #7f1d1d; color: #fecaca; border-color: #b91c1c; }
       button.danger:hover { background: #991b1b; }
     }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] button.danger { background: #7f1d1d; color: #fecaca; border-color: #b91c1c; }
+
+html[data-theme="dark"] button.danger:hover { background: #991b1b; }
+
 
     button.success { background: var(--success); color: #ffffff; }
     button.success:hover { background: var(--success-dark); }
@@ -553,6 +575,9 @@
     @media (prefers-color-scheme: dark) {
       .search-results-info { background: #3d2f1f; color: #d6c5ad; }
     }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] .search-results-info { background: #3d2f1f; color: #d6c5ad; }
+
 
     .sync-panel {
       background: linear-gradient(135deg, #fdf4e8 0%, #fbe8cf 100%);
@@ -578,6 +603,12 @@
         border-color: #7c2d12;
       }
     }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] .sync-panel {
+        background: linear-gradient(135deg, #43200a 0%, #7c2d12 100%);
+        border-color: #7c2d12;
+      }
+
 
     .sync-header {
       display: flex;
@@ -602,6 +633,9 @@
     @media (prefers-color-scheme: dark) {
       .sync-header h2 { color: #faf3e8; }
     }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] .sync-header h2 { color: #faf3e8; }
+
 
     .sync-status {
       display: inline-flex;
@@ -626,6 +660,13 @@
         border-color: rgba(255, 255, 255, 0.05);
       }
     }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] .sync-status {
+        background: rgba(0, 0, 0, 0.45);
+        color: #d6c5ad;
+        border-color: rgba(255, 255, 255, 0.05);
+      }
+
 
     .sync-status.on { color: #047857; }
     .sync-status.off { color: #57432b; }
@@ -640,6 +681,17 @@
       .sync-status.error { color: #fca5a5; }
       .sync-status.paused { color: #a08b6e; }
     }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] .sync-status.on { color: #6ee7b7; }
+
+html[data-theme="dark"] .sync-status.off { color: #d6c5ad; }
+
+html[data-theme="dark"] .sync-status.busy { color: #fcd34d; }
+
+html[data-theme="dark"] .sync-status.error { color: #fca5a5; }
+
+html[data-theme="dark"] .sync-status.paused { color: #a08b6e; }
+
 
     .status-dot {
       width: 8px;
@@ -687,6 +739,9 @@
     @media (prefers-color-scheme: dark) {
       .field-group label { color: #fed7aa; }
     }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] .field-group label { color: #fed7aa; }
+
 
     .help-text {
       font-size: var(--fs-xs);
@@ -700,10 +755,15 @@
     @media (prefers-color-scheme: dark) {
       .help-text { color: #ffedd5; opacity: 0.9; }
     }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] .help-text { color: #ffedd5; opacity: 0.9; }
+
 
     .help-text a { color: #9a3412; font-weight: 700; text-decoration: none; }
     .help-text a:hover { text-decoration: underline; }
     @media (prefers-color-scheme: dark) { .help-text a { color: #fdba74; } }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] .help-text a { color: #fdba74; } 
 
     .help-text code {
       background: rgba(30, 58, 138, 0.1);
@@ -717,6 +777,9 @@
     @media (prefers-color-scheme: dark) {
       .help-text code { background: rgba(0, 0, 0, 0.4); color: #fed7aa; }
     }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] .help-text code { background: rgba(0, 0, 0, 0.4); color: #fed7aa; }
+
 
     .sync-actions {
       display: flex;
@@ -746,6 +809,9 @@
     @media (prefers-color-scheme: dark) {
       .interval-row label { color: #fed7aa; }
     }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] .interval-row label { color: #fed7aa; }
+
 
     .interval-row select {
       min-height: 36px;
@@ -836,6 +902,9 @@
     @media (prefers-color-scheme: dark) {
       th { background: #3d2f1f; color: #faf3e8; border-bottom-color: #57432b; }
     }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] th { background: #3d2f1f; color: #faf3e8; border-bottom-color: #57432b; }
+
 
     th.student-column {
       position: sticky;
@@ -854,6 +923,9 @@
     @media (prefers-color-scheme: dark) {
       th.student-column { background: #3d2f1f; }
     }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] th.student-column { background: #3d2f1f; }
+
 
     td.student-name-cell {
       position: sticky;
@@ -981,6 +1053,13 @@
         color: #fed7aa;
       }
     }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] td.today-column .attendance-button:not(.absent):not(.late) {
+        background: #1c130a;
+        border: 1.5px solid #f97316;
+        color: #fed7aa;
+      }
+
 
     .attendance-button {
       display: inline-flex;
@@ -1010,6 +1089,11 @@
       .attendance-button { background: #3d2f1f; color: #ede0cf; }
       .attendance-button:hover { background: #57432b; }
     }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] .attendance-button { background: #3d2f1f; color: #ede0cf; }
+
+html[data-theme="dark"] .attendance-button:hover { background: #57432b; }
+
 
     .attendance-button.absent {
       color: var(--absent-text);
@@ -1192,6 +1276,12 @@
         border-color: #7c2d12;
       }
     }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] .att-head {
+        background: linear-gradient(135deg, #43200a 0%, #7c2d12 100%);
+        border-color: #7c2d12;
+      }
+
 
     .att-head-close {
       position: absolute;
@@ -1221,6 +1311,11 @@
       .att-head-close { background: rgba(0, 0, 0, 0.4); color: #ede0cf; }
       .att-head-close:hover { background: rgba(0, 0, 0, 0.6); }
     }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] .att-head-close { background: rgba(0, 0, 0, 0.4); color: #ede0cf; }
+
+html[data-theme="dark"] .att-head-close:hover { background: rgba(0, 0, 0, 0.6); }
+
 
     .att-head-label {
       font-size: var(--fs-xs);
@@ -1232,6 +1327,8 @@
     }
 
     @media (prefers-color-scheme: dark) { .att-head-label { color: #fed7aa; } }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] .att-head-label { color: #fed7aa; } 
 
     .att-head-name {
       font-size: clamp(18px, 2vw + 12px, 22px);
@@ -1244,6 +1341,8 @@
     }
 
     @media (prefers-color-scheme: dark) { .att-head-name { color: #fdfaf7; } }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] .att-head-name { color: #fdfaf7; } 
 
     .att-head-date {
       margin-top: 6px;
@@ -1256,6 +1355,8 @@
     }
 
     @media (prefers-color-scheme: dark) { .att-head-date { color: #d6c5ad; } }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] .att-head-date { color: #d6c5ad; } 
 
     .att-body { padding: 20px 22px 22px; background: var(--card); }
 
@@ -1268,6 +1369,8 @@
     }
 
     @media (prefers-color-scheme: dark) { .att-question { color: #a08b6e; } }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] .att-question { color: #a08b6e; } 
 
     .att-options {
       display: grid;
@@ -1339,6 +1442,8 @@
     .att-option-hint { font-size: var(--fs-2xs); font-weight: 500; color: var(--muted); margin-top: 2px; }
 
     @media (prefers-color-scheme: dark) { .att-option-hint { color: #a08b6e; } }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] .att-option-hint { color: #a08b6e; } 
 
     .att-option.current { border-width: 3px; position: relative; }
 
@@ -1366,6 +1471,13 @@
       .att-option-absent.current { background: #7f1d1d; }
       .att-option-late.current { background: #78350f; }
     }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] .att-option-present.current { background: #064e3b; }
+
+html[data-theme="dark"] .att-option-absent.current { background: #7f1d1d; }
+
+html[data-theme="dark"] .att-option-late.current { background: #78350f; }
+
 
     .dev-section {
       margin-bottom: 16px;
@@ -1377,6 +1489,8 @@
     }
 
     @media (prefers-color-scheme: dark) { .dev-section { background: #3b2e16; border-color: #3d2f1f; } }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] .dev-section { background: #3b2e16; border-color: #3d2f1f; } 
 
     .dev-section:hover { border-color: var(--border-strong); }
 
@@ -1444,6 +1558,8 @@
     }
 
     @media (prefers-color-scheme: dark) { .dev-password-reveal { background: #3d2f1f; border-color: #57432b; } }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] .dev-password-reveal { background: #3d2f1f; border-color: #57432b; } 
 
     .maintenance-overlay {
       position: fixed;
@@ -1474,6 +1590,9 @@
     @media (prefers-color-scheme: dark) {
       .maintenance-overlay { background: linear-gradient(135deg, #1c130a 0%, #362918 50%, #0d0803 100%); }
     }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] .maintenance-overlay { background: linear-gradient(135deg, #1c130a 0%, #362918 50%, #0d0803 100%); }
+
 
     .maintenance-content {
       max-width: 520px;
@@ -1572,6 +1691,13 @@
         border-color: rgba(239, 68, 68, 0.5);
       }
     }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] .maintenance-active-badge {
+        background: rgba(239, 68, 68, 0.25);
+        color: #fca5a5;
+        border-color: rgba(239, 68, 68, 0.5);
+      }
+
 
     @media (min-width: 1800px) {
       :root { --space-lg: 32px; }
@@ -1688,6 +1814,15 @@
         td.today-column .attendance-button:not(.absent):not(.late):hover { background: #1c130a; }
         .att-head-close:hover { background: rgba(0, 0, 0, 0.4); }
       }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] button.secondary:hover { background: #3d2f1f; }
+
+html[data-theme="dark"] .attendance-button:hover { background: #3d2f1f; }
+
+html[data-theme="dark"] td.today-column .attendance-button:not(.absent):not(.late):hover { background: #1c130a; }
+
+html[data-theme="dark"] .att-head-close:hover { background: rgba(0, 0, 0, 0.4); }
+
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -1979,6 +2114,76 @@ td.today-column .attendance-button.late { border: 1px solid var(--late-border); 
   .dev-section { background: var(--surface-1); border-color: var(--border); }
   .toast, .toast.success, .toast.error, .toast.warning { background: #f3e6d2; color: #3a2412; }
 }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] :root {
+    --primary: #f4a259; --primary-dark: #f7b56d; --primary-light: #fbc385; --primary-soft: #3a2412;
+    --background: #171008; --background-alt: #1e150c; --card: #2b1f14; --surface-1: #2b1f14; --surface-2: #3d2f1f;
+    --border: #3d2f1f; --border-strong: #57432b; --border-subtle: #2b1f14;
+    --text: #ede0cf; --text-strong: #faf3e8; --text-soft: #d6c5ad; --muted: #a08b6e; --muted-strong: #d6c5ad; --placeholder: #7a674e;
+    --success: #a3d98a; --success-dark: #bcd37a; --success-soft: #33280f;
+    --warning: #e8b04b; --warning-dark: #f5c26b; --warning-soft: #3a2412;
+    --error: #eda795; --error-dark: #f7c4b2; --error-soft: #43241d;
+    --absent: #4a2620; --absent-border: #7d503f; --absent-text: #f2b5a0;
+    --late: #3d2b14; --late-border: #775734; --late-text: #eec27a;
+    --weekend: #241a0f; --today-bg: #4a2c12; --today-text: #fed7aa; --today-border: #8a5a2b;
+    --row-hover: #362918; --row-hover-border: #57432b;
+    --shadow-focus: 0 0 0 3px rgba(244, 162, 89, .17);
+  }
+
+html[data-theme="dark"] button:not(.secondary):not(.danger):not(.warning):not(.attendance-button):not(.att-option):not(.version-badge):not(.att-head-close):not(.news-close) { color: #3a2412; }
+
+html[data-theme="dark"] button.secondary { background: var(--card); color: var(--text-soft); border-color: var(--border); }
+
+html[data-theme="dark"] button.secondary:hover { background: var(--surface-2); }
+
+html[data-theme="dark"] .version-badge { background: var(--surface-2); box-shadow: none; }
+
+html[data-theme="dark"] .sync-panel, html[data-theme="dark"] .news-banner, html[data-theme="dark"] .att-head { background: var(--card); border-color: var(--border); }
+
+html[data-theme="dark"] .news-banner { background: var(--warning-soft); color: var(--late-text); }
+
+html[data-theme="dark"] .sync-header h2, html[data-theme="dark"] .att-head-name { color: var(--text-strong); }
+
+html[data-theme="dark"] .sync-status, html[data-theme="dark"] .search-results-info { background: var(--surface-1); color: var(--muted); }
+
+html[data-theme="dark"] .field-group label, html[data-theme="dark"] .interval-row label, html[data-theme="dark"] .help-text { color: var(--muted); }
+
+html[data-theme="dark"] .help-text a { color: var(--primary); }
+
+html[data-theme="dark"] .help-text code { color: var(--primary); background: var(--surface-2); }
+
+html[data-theme="dark"] th, html[data-theme="dark"] th.student-column { background: var(--surface-1); color: var(--text-soft); border-bottom-color: var(--border); }
+
+html[data-theme="dark"] .attendance-button, html[data-theme="dark"] .attendance-button.unmarked { background: transparent; color: var(--placeholder); }
+
+html[data-theme="dark"] .attendance-button:hover { background: var(--surface-2); }
+
+html[data-theme="dark"] .attendance-button.present, html[data-theme="dark"] td.today-column .attendance-button.present:not(.absent):not(.late), html[data-theme="dark"] tbody tr:hover .attendance-button.present:not(.absent):not(.late) { background: var(--success-soft); color: var(--success); border-color: #6b5a2e; }
+
+html[data-theme="dark"] td.today-column .attendance-button.unmarked:not(.absent):not(.late) { background: transparent; border-color: var(--today-border); color: var(--today-text); }
+
+html[data-theme="dark"] .legend-box-present { border-color: #6b5a2e; }
+
+html[data-theme="dark"] .att-head { background: var(--surface-1); }
+
+html[data-theme="dark"] .att-head-label { color: var(--primary); }
+
+html[data-theme="dark"] .att-head-date, html[data-theme="dark"] .att-question, html[data-theme="dark"] .att-option-hint { color: var(--muted); }
+
+html[data-theme="dark"] .att-head-close { background: transparent; color: var(--muted); }
+
+html[data-theme="dark"] .att-head-close:hover { background: var(--surface-2); }
+
+html[data-theme="dark"] .att-option-present.current { background: var(--success-soft); }
+
+html[data-theme="dark"] .att-option-absent.current { background: var(--absent); }
+
+html[data-theme="dark"] .att-option-late.current { background: var(--late); }
+
+html[data-theme="dark"] .dev-section { background: var(--surface-1); border-color: var(--border); }
+
+html[data-theme="dark"] .toast, html[data-theme="dark"] .toast.success, html[data-theme="dark"] .toast.error, html[data-theme="dark"] .toast.warning { background: #f3e6d2; color: #3a2412; }
+
 
 @media (min-width: 1800px) { .container { max-width: 1660px; } }
 @media (max-width: 1100px) {
@@ -2187,6 +2392,23 @@ input[type="date"]:focus { outline: none; border-color: var(--primary); box-shad
   button.student-card-day.absent { color: var(--absent-text) !important; }
   button.student-card-day.late { color: var(--late-text) !important; }
 }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] .version-badge { background: var(--primary-soft); color: var(--primary); }
+
+html[data-theme="dark"] .view-switcher button:not(.secondary) { color: var(--muted); }
+
+html[data-theme="dark"] .view-switcher button[aria-pressed="true"] { color: #3a2412; }
+
+html[data-theme="dark"] button.student-card-trigger { color: var(--text-strong) !important; }
+
+html[data-theme="dark"] button.student-card-day { color: var(--text) !important; }
+
+html[data-theme="dark"] button.student-card-day.present { color: var(--success) !important; }
+
+html[data-theme="dark"] button.student-card-day.absent { color: var(--absent-text) !important; }
+
+html[data-theme="dark"] button.student-card-day.late { color: var(--late-text) !important; }
+
 @media (hover: hover) { tbody tr:hover th.student-name-cell { background: var(--row-hover); } }
 @media (max-width: 700px) { .storage-badge { justify-content: flex-start; flex-basis: auto; margin-right: auto; } .table-caption { align-items: flex-start; flex-direction: column; gap: 4px; } .table-caption p:last-child { display: none; } }
 @media (max-width: 480px) { th.student-name-cell { min-width: 146px; width: 146px; max-width: 146px; padding: 8px 10px; font-size: 12px; } .student-name-flex { gap: 6px; } .student-name-text { max-width: 95px; } .summary-note { font-size: 10px; } .student-entry button { padding: 0 12px; font-size: 12px; } .header-actions { gap: 7px; } .header-actions button { padding: 0 10px; } }
@@ -2706,6 +2928,8 @@ body[data-tech-admin] .role-banner{background:#fef3c7;border-color:#79450a;color
 /* Delete button must stay a fixed circle: never stretched or squashed by flex layout. */
 .hw-delete{flex:0 0 auto;width:30px;height:30px;min-width:30px;min-height:30px;max-width:30px;max-height:30px;padding:0;margin:0;border-radius:50%;font-size:16px;line-height:1;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box}
 @media (prefers-color-scheme:dark){.hw-item{background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.12)}}
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] .hw-item {background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.12)}
 
 /* Homework: round "+" add button and due-date styling */
 .hw-add-round{flex:0 0 auto;width:46px;height:46px;min-width:46px;min-height:46px;max-width:46px;max-height:46px;box-sizing:border-box;border-radius:50%;border:none;background:var(--primary,#c2410c);color:#fff;font-size:26px;line-height:1;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;padding:0 0 3px;box-shadow:0 3px 10px rgba(0,0,0,.18);transition:transform .12s ease,filter .12s ease}
@@ -2715,6 +2939,8 @@ body[data-tech-admin] .role-banner{background:#fef3c7;border-color:#79450a;color
 .hw-add-hint{align-self:center;font-size:12px;color:var(--muted,#555)}
 .hw-overdue{color:#c62828;font-weight:600}
 @media (prefers-color-scheme:dark){.hw-overdue{color:#ff8a80}}
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] .hw-overdue {color:#ff8a80}
 /* Mobile: global "button{width:100%}" would stretch the round + into an ellipse — pin icon buttons to circles. */
 @media screen and (max-width:700px){
   .hw-add-round{width:46px;height:46px;flex:0 0 auto}
@@ -2914,6 +3140,21 @@ input:not([type]), select, textarea { border-radius: var(--radius-sm); }
   .device-role, .device-input { background: #291d0d; border-color: #524127; color: #f7efe4; }
   .modal { background: #2f210f; border-color: #524127; }
 }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] .dev-section { background: #322612; border-color: #524127; }
+
+html[data-theme="dark"] .dev-section:hover { border-color: #6c5735; }
+
+html[data-theme="dark"] .dev-section input, html[data-theme="dark"] .dev-section textarea { background: #291d0d; border-color: #524127; color: #f7efe4; }
+
+html[data-theme="dark"] .dev-section input:focus, html[data-theme="dark"] .dev-section textarea:focus { border-color: var(--primary-light); box-shadow: 0 0 0 3px rgba(251, 146, 60, 0.22); }
+
+html[data-theme="dark"] .device-row { background: #2f210f; border-color: #524127; }
+
+html[data-theme="dark"] .device-role, html[data-theme="dark"] .device-input { background: #291d0d; border-color: #524127; color: #f7efe4; }
+
+html[data-theme="dark"] .modal { background: #2f210f; border-color: #524127; }
+
 
 /* Row alignment: grid children were allowed to exceed their track
    (missing min-width:0), causing the name column to push the delete
@@ -3014,6 +3255,17 @@ input:not([type]), select, textarea { border-radius: var(--radius-sm); }
       --btn-glass-shadow: inset 0 1px 1px rgba(206, 234, 255, .3), inset 0 -1px 2px rgba(3, 20, 37, .35), 0 3px 10px rgba(3, 20, 37, .25);
     }
   }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] :root {
+      --btn-glass-primary: linear-gradient(168deg, rgba(86, 150, 182, .6), rgba(38, 88, 120, .66) 46%, rgba(24, 62, 90, .74));
+      --btn-glass-secondary: linear-gradient(160deg, rgba(64, 108, 144, .5), rgba(38, 74, 104, .44));
+      --btn-glass-danger: linear-gradient(160deg, rgba(122, 58, 84, .6), rgba(88, 42, 66, .55));
+      --btn-glass-success: linear-gradient(160deg, rgba(38, 106, 92, .6), rgba(24, 76, 66, .55));
+      --btn-glass-warning: linear-gradient(160deg, rgba(120, 96, 46, .6), rgba(92, 72, 32, .55));
+      --btn-glass-line: rgba(190, 228, 250, .4);
+      --btn-glass-shadow: inset 0 1px 1px rgba(206, 234, 255, .3), inset 0 -1px 2px rgba(3, 20, 37, .35), 0 3px 10px rgba(3, 20, 37, .25);
+    }
+
 
   /* Core: all buttons become frosted glass. Exceptions keep their shape:
      - attendance cells / option chips / day icons already have their own
@@ -3043,6 +3295,13 @@ input:not([type]), select, textarea { border-radius: var(--radius-sm); }
     button.success { border-color: rgba(71, 150, 128, .7); }
     button.warning { border-color: rgba(137, 116, 72, .75); }
   }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] button.danger { border-color: rgba(140, 92, 112, .7); }
+
+html[data-theme="dark"] button.success { border-color: rgba(71, 150, 128, .7); }
+
+html[data-theme="dark"] button.warning { border-color: rgba(137, 116, 72, .75); }
+
 
   /* Hover/active read as a brighter frost, not a different color. */
   button:not(:disabled):hover { filter: brightness(1.06) saturate(115%); }
@@ -3068,6 +3327,13 @@ input:not([type]), select, textarea { border-radius: var(--radius-sm); }
     #attendanceTableCard .attendance-button.absent { background: rgba(90, 51, 75, .62); }
     #attendanceTableCard .attendance-button.late { background: rgba(86, 69, 45, .62); }
   }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] #attendanceTableCard .attendance-button.present { background: rgba(22, 85, 78, .6); }
+
+html[data-theme="dark"] #attendanceTableCard .attendance-button.absent { background: rgba(90, 51, 75, .62); }
+
+html[data-theme="dark"] #attendanceTableCard .attendance-button.late { background: rgba(86, 69, 45, .62); }
+
 
   /* The homework "+" circle keeps its size but gets the primary frost. */
   .hw-add-round { background: var(--btn-glass-primary); border: 1px solid var(--btn-glass-line); box-shadow: var(--btn-glass-shadow); -webkit-backdrop-filter: blur(8px) saturate(140%); backdrop-filter: blur(8px) saturate(140%); color: #fff8f5; }
@@ -3090,6 +3356,13 @@ input:not([type]), select, textarea { border-radius: var(--radius-sm); }
     .att-option-absent { border-color: rgba(140, 92, 112, .7); }
     .att-option-late { border-color: rgba(137, 116, 72, .75); }
   }
+/* Manual dark theme mirrors the component rules above. */
+html[data-theme="dark"] .att-option-present { border-color: rgba(71, 150, 128, .7); }
+
+html[data-theme="dark"] .att-option-absent { border-color: rgba(140, 92, 112, .7); }
+
+html[data-theme="dark"] .att-option-late { border-color: rgba(137, 116, 72, .75); }
+
 
   /* Accessibility: users who opt out of translucency get flat fills back. */
   @media (prefers-reduced-transparency: reduce) {
@@ -3225,9 +3498,14 @@ input:not([type]), select, textarea { border-radius: var(--radius-sm); }
   .autumn-leaves span:nth-child(11){left:79%; animation-duration:27s; animation-delay:-15s; font-size:24px}
   .autumn-leaves span:nth-child(12){left:93%; animation-duration:22s; animation-delay:-6s;  font-size:19px}
 }
-/* Tablets (701–1100px): wider viewport needs more leaves + bigger sizes */
+/* Tablets (701–1100px): the wide viewport used to run 16 big blurred
+   leaves at once — on weaker tablets that constant GPU compositing was the
+   main source of interface lag. The animation now stays transform-only (the
+   saturate() filter is dropped here), the leaf count is cut in half and the
+   remaining ones are simply a little larger. */
 @media screen and (min-width:701px) and (max-width:1100px){
-  .autumn-leaves span{font-size:30px; opacity:.5}
+  .autumn-leaves span{filter:none;font-size:34px; opacity:.5}
+  .autumn-leaves span:nth-child(n+9){display:none}
   .autumn-leaves span:nth-child(1){left:4%;   animation-duration:21s; animation-delay:-2s;  font-size:24px}
   .autumn-leaves span:nth-child(2){left:16%;  animation-duration:26s; animation-delay:-9s;  font-size:32px}
   .autumn-leaves span:nth-child(3){left:28%;  animation-duration:18s; animation-delay:-5s;  font-size:20px}
@@ -3269,14 +3547,27 @@ input:not([type]), select, textarea { border-radius: var(--radius-sm); }
   .autumn-leaves span:nth-child(18){left:90%; animation-duration:28s; animation-delay:-17s; font-size:33px}
 }
 /* Dark mode: slightly dimmer leaves + warm dark wash (all breakpoints) */
+@media screen and (prefers-color-scheme:dark)/* Dark appearance comes from TWO independent sources:
+   1) system dark mode while the theme picker is on "auto" (no data-theme attr);
+   2) a manually chosen dark theme (data-theme="dark") regardless of the OS.
+Keeping them separate lets "light" override a dark OS immediately. */
 @media screen and (prefers-color-scheme:dark){
-  body{
+  html:not([data-theme]) body{
     background-image:
       radial-gradient(ellipse at 12% 4%, rgba(249,115,22,.14), transparent 58%),
       radial-gradient(ellipse at 88% 78%, rgba(120,53,15,.22), transparent 55%),
       linear-gradient(160deg, #1c130a 0%, #241708 50%, #171008 100%);
   }
-  .autumn-leaves span{opacity:.34}
+  html:not([data-theme]) .autumn-leaves span{opacity:.34}
+}
+html[data-theme="dark"] {
+  html[data-theme="dark"] body{
+    background-image:
+      radial-gradient(ellipse at 12% 4%, rgba(249,115,22,.14), transparent 58%),
+      radial-gradient(ellipse at 88% 78%, rgba(120,53,15,.22), transparent 55%),
+      linear-gradient(160deg, #1c130a 0%, #241708 50%, #171008 100%);
+  }
+  html[data-theme="dark"] .autumn-leaves span{opacity:.34}
 }
 /* Accessibility: respect reduced-motion everywhere */
 @media (prefers-reduced-motion:reduce){
@@ -3291,6 +3582,9 @@ input:not([type]), select, textarea { border-radius: var(--radius-sm); }
 }
 @media screen and (min-width:701px) and (prefers-color-scheme:dark){
   .container{background:linear-gradient(145deg,#5a3a1c40,#2b1f144d)}
+}
+@media screen and (min-width:701px){
+  html[data-theme="dark"] .container{background:linear-gradient(145deg,#5a3a1c40,#2b1f144d)}
 }
 
 /* ============================================================
@@ -3370,7 +3664,13 @@ input:not([type]), select, textarea { border-radius: var(--radius-sm); }
 @media screen and (max-width: 480px) {
   .theme-seg-btn { font-size: 12px; min-height: 40px; padding: 8px 4px; }
 }
-@media (prefers-color-scheme: dark) {
-      html:not([data-theme="light"]) .theme-seg-btn.is-active { box-shadow: 0 1px 3px rgba(0,0,0,.5); }
-    }
-    html[data-theme="dark"] .theme-seg-btn.is-active { box-shadow: 0 1px 3px rgba(0,0,0,.5); }
+html[data-theme="dark"] .theme-seg-btn.is-active { box-shadow: 0 1px 3px rgba(0,0,0,.5); }
+
+/* Performance: while a dialog (settings, attendance card, password prompt) or
+   the maintenance/shadow-ban overlay is open, pause every background effect:
+   the falling-leaf animation and the slow body-background repaint it forces.
+   This keeps taps inside modals instant even on weaker tablets. */
+.modal-backdrop.open ~ .autumn-leaves span,
+.maintenance-overlay.open ~ .autumn-leaves span { animation-play-state: paused; }
+body:has(.modal-backdrop.open) .autumn-leaves span,
+body:has(.maintenance-overlay.open) .autumn-leaves span { animation-play-state: paused; }
