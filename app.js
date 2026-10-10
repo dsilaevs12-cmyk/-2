@@ -22,6 +22,12 @@ var BACKUP_KEY = "attendance_recovery_backups";
 var NEWS_DISMISS_KEY = "attendance_news_dismissed";
 var AUTH_ACCOUNTS_KEY = "attendance_auth_accounts";
 var AUTH_SESSION_KEY = "attendance_auth_session";
+// Cross-device account sync: the registry of accounts (names + password/secret
+// hashes, PBKDF2-derived — never the passwords themselves) travels inside the
+// synced journal payload. This lets a user register on one device and log in
+// on another that shares the same Gist. The session itself stays per-device.
+var ACCOUNT_SYNC_VERSION = 1;
+var authAccountsDirtyAt = 0; // wall-clock time of the last local account change
 var DEFAULT_VERSION_TEXT = "версия: 3.3";
 var DEFAULT_MAINTENANCE_MSG = "Журнал временно на обслуживании. Попробуйте вернуться позже.";
 var STATUS_PRESENT = "present", STATUS_ABSENT = "absent", STATUS_LATE = "late", STATUS_UNMARKED = "unmarked";
@@ -30,7 +36,7 @@ var statusSymbols = { present: "✓", absent: "Н", late: "О", unmarked: "·" }
 var settingFields = ["maintenance", "maintenanceMessage", "maintenanceBy", "news", "versionText"];
 var monthNames = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
 var weekdayNames = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
-var state = { students: [], attendance: {}, settings: defaultSettings(), selectedMonth: getMonthString(new Date()), searchQuery: "", revision: 0, lastSyncedRevision: 0, devUnlocked: false, deviceMeta: {}, homework: [] };
+var state = { students: [], attendance: {}, settings: defaultSettings(), selectedMonth: getMonthString(new Date()), searchQuery: "", revision: 0, lastSyncedRevision: 0, devUnlocked: false, deviceMeta: {}, homework: [], accounts: [] };
 var syncConfig = { enabled: false, token: "", gistId: "", isPublicGist: false, lastSync: 0, lastSyncStatus: "off", lastError: "" };
 var deviceId = "", logicalTime = 0, activeModal = null, previousFocus = null, modalStack = [];
 var attendanceModalState = { open: false, studentId: "", dateKey: "", currentStatus: STATUS_UNMARKED };
@@ -569,6 +575,68 @@ function loadAuthAccounts() {
 function saveAuthAccounts(list) {
   if (!storage) throw new Error("Хранилище недоступно — не удалось сохранить аккаунт");
   storage.setItem(AUTH_ACCOUNTS_KEY, JSON.stringify(list));
+  // Remember the local change time so cross-device merges can pick the newer
+  // registry (last-write-wins per account id).
+  authAccountsDirtyAt = Date.now();
+  markChanged(["accounts"]); scheduleSaveLocal(); scheduleSync();
+}
+/* ---------- Cross-device account registry sync ---------- */
+// The account list (names + PBKDF2 hashes only, never plaintext passwords)
+// rides inside the synced journal snapshot as `state.accounts`. Merge policy:
+// per-account last-write-wins by `updatedAt`; deletions are recorded as tomb-
+// stones (deleted:true) so they propagate instead of resurrecting via an older
+// remote copy. Tombstones expire after 60 days to keep the payload small.
+var ACCOUNT_TOMBSTONE_MS = 60 * 24 * 3600 * 1000;
+function cleanAccounts(list) {
+  var out = [], seen = {};
+  (Array.isArray(list) ? list : []).forEach(function (a) {
+    if (!a || typeof a !== "object" || !a.id || seen[a.id]) return;
+    seen[a.id] = true;
+    var entry = {
+      id: String(a.id),
+      fullName: String(a.fullName == null ? "" : a.fullName).slice(0, 130),
+      firstName: String(a.firstName == null ? "" : a.firstName).slice(0, 60),
+      lastName: String(a.lastName == null ? "" : a.lastName).slice(0, 60),
+      salt: String(a.salt == null ? "" : a.salt).slice(0, 64),
+      hash: String(a.hash == null ? "" : a.hash).slice(0, 128),
+      createdAt: Number(a.createdAt) || 0,
+      updatedAt: Number(a.updatedAt) || Number(a.createdAt) || 0
+    };
+    if (a.secretHash) entry.secretHash = String(a.secretHash).slice(0, 128);
+    if (a.deleted) { entry.deleted = true; entry.deletedAt = Number(a.deletedAt) || entry.updatedAt; }
+    if (entry.salt && entry.hash) out.push(entry);
+  });
+  var cutoff = Date.now() - ACCOUNT_TOMBSTONE_MS;
+  return out.filter(function (a) { return !a.deleted || (a.deletedAt || 0) > cutoff; });
+}
+// Only well-formed ids travel between devices (same rule as students).
+function accountValidId(id) { return typeof id === "string" && /^[a-zA-Z0-9_-]{1,100}$/.test(id); }
+function mergeAccounts(localList, remoteList) {
+  var byId = {};
+  [].concat(localList || [], remoteList || []).forEach(function (a) {
+    if (!a || !accountValidId(a.id)) return;
+    var prev = byId[a.id];
+    if (!prev || (Number(a.updatedAt) || 0) >= (Number(prev.updatedAt) || 0)) byId[a.id] = a;
+  });
+  return cleanAccounts(Object.keys(byId).map(function (k) { return byId[k]; }));
+}
+// Pull the synced registry into local storage when it is newer than what the
+// device has. Returns true when the local list was replaced.
+function applySyncedAccounts(remoteAccounts) {
+  if (!Array.isArray(remoteAccounts)) return false;
+  var merged = mergeAccounts(loadAuthAccounts(), remoteAccounts);
+  var raw = storage && storage.getItem(AUTH_ACCOUNTS_KEY);
+  var before = raw ? String(raw) : "";
+  var after = JSON.stringify(merged);
+  if (before === after) return false;
+  try {
+    if (storage) storage.setItem(AUTH_ACCOUNTS_KEY, after);
+    // Keep the dirty timestamp behind the newest synced record so our own
+    // next push does not clobber fresher accounts from another device.
+    var newest = merged.reduce(function (m, a) { return Math.max(m, Number(a.updatedAt) || 0); }, 0);
+    authAccountsDirtyAt = Math.max(authAccountsDirtyAt, newest);
+    return true;
+  } catch (e) { return false; }
 }
 function currentAuthSession() {
   try { var raw = storage && storage.getItem(AUTH_SESSION_KEY); var s = raw ? JSON.parse(raw) : null; return s && typeof s.fullName === "string" ? s : null; }
@@ -674,7 +742,7 @@ async function handleAuthRegister() {
   try {
     var salt = authRandomHex(16);
     var derived = await authDerive(pass1, salt);
-    accounts.push({ id: generateId(), fullName: fullName, firstName: first, lastName: last, salt: salt, hash: derived, createdAt: Date.now() });
+    accounts.push({ id: generateId(), fullName: fullName, firstName: first, lastName: last, salt: salt, hash: derived, createdAt: Date.now(), updatedAt: nextTimestamp() });
     saveAuthAccounts(accounts);
     saveAuthSession({ accountId: accounts[accounts.length - 1].id, fullName: fullName, method: "register", at: Date.now() });
     d.authRegisterForm.reset();
@@ -733,6 +801,7 @@ async function handleAuthLogin(event) {
       // First login with secret-word 2FA: enrol the secret now (after the main
       // password was already verified above).
       account.secretHash = secretDerived;
+      account.updatedAt = nextTimestamp();
       var list = loadAuthAccounts();
       for (var j = 0; j < list.length; j++) { if (list[j].id === account.id) list[j] = account; }
       saveAuthAccounts(list);
@@ -1088,8 +1157,20 @@ function removeAuthAccount(id) {
   if (word === null) { showToast("Удаление отменено", "info"); return false; }
   if (authNormalizeName(word) !== authNormalizeName(account.fullName || "")) { showToast("Имя не совпало — удаление отменено", "info"); return false; }
   try { saveRecoveryBackup(); } catch (e) { showToast("Удаление отменено: " + e.message, "error"); return false; }
+  var delTime = nextTimestamp();
+  // Keep a tombstone so the deletion propagates to other synced devices
+  // instead of the account resurrecting from an older remote snapshot. The
+  // local storage list drops the account right away; only the synced payload
+  // carries the tombstone (see state.accounts).
   var remaining = loadAuthAccounts().filter(function (a) { return a.id !== id; });
   try { saveAuthAccounts(remaining); } catch (e) { showToast("Не удалось сохранить список аккаунтов: " + e.message, "error"); return false; }
+  var memList = cleanAccounts(state.accounts || []);
+  var tombAccount = null;
+  for (var ti = 0; ti < memList.length; ti++) { if (memList[ti].id === id) { tombAccount = memList[ti]; break; } }
+  if (!tombAccount) tombAccount = Object.assign({}, account);
+  tombAccount.deleted = true; tombAccount.deletedAt = delTime; tombAccount.updatedAt = delTime;
+  state.accounts = mergeAccounts(memList.filter(function (a) { return a.id !== id; }), [tombAccount]);
+  markChanged(["accounts"]); scheduleSync();
   if (isCurrent) {
     clearAuthSession(); state.devUnlocked = false;
     try { if (storage) storage.removeItem(SETTINGS_UNLOCK_KEY); } catch (e) {}
@@ -1368,6 +1449,9 @@ function wireCoreEvents() {
 }
 function init() {
   deviceId = getDeviceId(); var loaded = loadLocal(); loadSyncConfig(); loadInterval();
+  // Seed the synced account registry from this device's local login list so a
+  // fresh Gist starts carrying accounts right away (no journal edit needed).
+  try { state.accounts = mergeAccounts(state.accounts || [], loadAuthAccounts()); } catch (e) {}
   try { if (dom.githubToken) dom.githubToken.value = syncConfig.token; if (dom.gistId) dom.gistId.value = syncConfig.gistId; if (dom.gistPublicCheckbox) dom.gistPublicCheckbox.checked = Boolean(syncConfig.isPublicGist); } catch (error) {}
   if (loaded && storage) { saveLocal(); }
   // The settings unlock flag is restored from localStorage below; only the
@@ -1594,6 +1678,8 @@ function clockDominates(a,b) { var keys=new Set(Object.keys(a).concat(Object.key
 var migrateBase = migrateData;
 migrateData = function(data,strict) {
   var r=migrateBase(data,strict);
+  // Account registry rides with the journal snapshot (cross-device login).
+  r.accounts = cleanAccounts(data && data.accounts);
   projectLists.forEach(function(type) {
     var list=data && data[type];
     if (list!==undefined && !Array.isArray(list)) { if(strict)throw Error('Неверный список: '+type); list=[]; }
@@ -1627,11 +1713,29 @@ migrateData = function(data,strict) {
   return r;
 };
 var mergeBase=mergeData;
-mergeData=function(a,b){var r=mergeBase(a,b);projectLists.concat([homeworkListKey]).forEach(function(k){r[k]=mergeStudents(a[k]||[],b[k]||[]);});r.lessonMarks=mergeAttendance(a.lessonMarks,b.lessonMarks);r.deviceMeta=mergeDeviceMeta(a.deviceMeta,b.deviceMeta);return r;};
+mergeData=function(a,b){var r=mergeBase(a,b);projectLists.concat([homeworkListKey]).forEach(function(k){r[k]=mergeStudents(a[k]||[],b[k]||[]);});r.lessonMarks=mergeAttendance(a.lessonMarks,b.lessonMarks);r.deviceMeta=mergeDeviceMeta(a.deviceMeta,b.deviceMeta);r.accounts=mergeAccounts(a.accounts,b.accounts);return r;};
+// The payload carries the freshest of (local storage registry, in-memory copy)
+// so a push never overwrites newer accounts with a stale snapshot.
+function currentAccountsForPayload() {
+  var local = loadAuthAccounts();
+  var mem = state.accounts || [];
+  var merged = mergeAccounts(mem, local);
+  // Re-apply tombstones that live only in the in-memory synced copy: a locally
+  // deleted account must not resurrect from an older remote snapshot.
+  if (mem.length) {
+    var byId = {};
+    mem.forEach(function (a) { if (a.deleted) byId[a.id] = a; });
+    merged = merged.map(function (a) {
+      var tomb = byId[a.id];
+      return tomb && !a.deleted && (Number(tomb.updatedAt) || 0) > (Number(a.updatedAt) || 0) ? tomb : a;
+    });
+  }
+  return merged;
+}
 var buildBase=buildPayload;
-buildPayload=function(){var r=buildBase();projectLists.concat([homeworkListKey]).forEach(function(k){r[k]=copy(state[k]||[]);});r.lessonMarks=copy(state.lessonMarks||{});r.deviceMeta=copy(state.deviceMeta||{});return r;};
+buildPayload=function(){var r=buildBase();projectLists.concat([homeworkListKey]).forEach(function(k){r[k]=copy(state[k]||[]);});r.lessonMarks=copy(state.lessonMarks||{});r.deviceMeta=copy(state.deviceMeta||{});r.accounts=cleanAccounts(currentAccountsForPayload());return r;};
 var applyBase=applyMergedToState;
-applyMergedToState=function(data){applyBase(data);projectLists.concat([homeworkListKey]).forEach(function(k){state[k]=copy(data[k]||[]);});state.lessonMarks=copy(data.lessonMarks||{});state.deviceMeta=cleanDeviceMeta(data.deviceMeta);if(!state.classes.length)state.classes=migrateData({students:[],attendance:{}}).classes;trackedPayload=buildPayload();};
+applyMergedToState=function(data){applyBase(data);projectLists.concat([homeworkListKey]).forEach(function(k){state[k]=copy(data[k]||[]);});state.lessonMarks=copy(data.lessonMarks||{});state.deviceMeta=cleanDeviceMeta(data.deviceMeta);state.accounts=cleanAccounts(data.accounts);if(!state.classes.length)state.classes=migrateData({students:[],attendance:{}}).classes;trackedPayload=buildPayload();};
 function restoreProjectData(data,current,time){
   projectLists.concat([homeworkListKey]).forEach(function(k){data[k]=data[k]||[];var ids=new Set(data[k].map(function(v){return v.id;}));(current[k]||[]).forEach(function(v){if(!ids.has(v.id))data[k].push(Object.assign({},v,{deleted:true}));});data[k].forEach(function(v){v.updatedAt=time;v.actor=deviceId;});});
   Object.keys(current.lessonMarks||{}).forEach(function(k){if(!data.lessonMarks[k])data.lessonMarks[k]={status:'unmarked'};});Object.values(data.lessonMarks).forEach(function(v){v.updatedAt=time;v.actor=deviceId;});
@@ -2499,8 +2603,15 @@ function syncApply(merged) {
   var before = buildPayload();
   if (!syncEqual(before, merged)) {
     applyMergedToState(merged);
+    // Bring the synced account registry into this device's local login list so
+    // accounts created on another device can sign in here (hashes only).
+    var accountsArrived = applySyncedAccounts(merged.accounts);
     if (saveLocal() === false) throw syncLocalSaveError();
     render(); announceIncoming(before, merged, "Получено с другого устройства");
+    if (accountsArrived) {
+      renderUserList();
+      showToast("Список пользователей обновлён с другого устройства", "info");
+    }
   }
   // Device roster changes must not schedule a push: the heartbeat is stamped
   // locally and uploaded with the next real change.
