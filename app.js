@@ -49,6 +49,10 @@ var storage = accessibleStorage("localStorage"), sessStorage = accessibleStorage
 // as they were before.
 var INSTITUTIONS_KEY = "attendance_institutions";
 var ACTIVE_INSTITUTION_KEY = "attendance_active_institution";
+// The active-institution pointer must be device-wide, NOT per-institution:
+// it used to be namespaced by instKey(), so opening institution B from A's
+// settings left the old key behind and a plain page reload bounced back to A.
+var GLOBAL_ACTIVE_INSTITUTION_KEY = ACTIVE_INSTITUTION_KEY;
 var INSTITUTION_NAME_KEY = "attendance_institution_name_main"; // rename of the default institution
 var DEFAULT_INSTITUTION_ID = "inst-main";
 function validInstId(id) { return typeof id === "string" && /^[a-zA-Z0-9_-]{1,64}$/.test(id); }
@@ -82,10 +86,23 @@ function getActiveInstitutionId() {
       if (validInstId(fromUrl)) return fromUrl;
     } catch (e) {}
   }
-  if (storage) { try { var saved = storage.getItem(ACTIVE_INSTITUTION_KEY); if (validInstId(saved)) return saved; } catch (e) {} }
+  if (storage) { try { var saved = storage.getItem(GLOBAL_ACTIVE_INSTITUTION_KEY); if (validInstId(saved)) return saved; } catch (e) {} }
   return DEFAULT_INSTITUTION_ID;
 }
 var ACTIVE_INSTITUTION_ID = getActiveInstitutionId();
+// One-time cleanup: older builds namespaced the active pointer per
+// institution (e.g. "inst-xxx_attendance_active_institution"), which made
+// reloads jump back to the previous institution. Drop those stale keys.
+try {
+  if (storage) {
+    var staleKeys = [];
+    for (var si = 0; si < storage.length; si++) {
+      var sk = storage.key(si);
+      if (sk && sk !== GLOBAL_ACTIVE_INSTITUTION_KEY && sk.slice(-GLOBAL_ACTIVE_INSTITUTION_KEY.length - 1) === "_" + GLOBAL_ACTIVE_INSTITUTION_KEY) staleKeys.push(sk);
+    }
+    staleKeys.forEach(function (k) { try { storage.removeItem(k); } catch (e) {} });
+  }
+} catch (e) {}
 function institutionNameById(id) {
   if (id === DEFAULT_INSTITUTION_ID) {
     try { var custom = storage && storage.getItem(INSTITUTION_NAME_KEY); if (typeof custom === "string" && custom.trim()) return custom.trim().slice(0, 200); } catch (e) {}
@@ -102,6 +119,9 @@ if (ACTIVE_INSTITUTION_ID !== DEFAULT_INSTITUTION_ID) {
   INTERVAL_KEY = instKey(INTERVAL_KEY); SETTINGS_UNLOCK_KEY = instKey(SETTINGS_UNLOCK_KEY); SETTINGS_CODE_SET_KEY = instKey(SETTINGS_CODE_SET_KEY);
   BACKUP_KEY = instKey(BACKUP_KEY); NEWS_DISMISS_KEY = instKey(NEWS_DISMISS_KEY); AUTH_ACCOUNTS_KEY = instKey(AUTH_ACCOUNTS_KEY);
   AUTH_SESSION_KEY = instKey(AUTH_SESSION_KEY);
+  // ACTIVE_INSTITUTION_KEY stays deliberately UN-namespaced (see GLOBAL_ACTIVE_INSTITUTION_KEY):
+  // the "where should a plain reload land" pointer is device-wide, so opening
+  // another institution survives F5 / mobile tab restores.
 }
 function switchToInstitution(id) {
   if (!validInstId(id)) return false;
@@ -116,6 +136,10 @@ function switchToInstitution(id) {
 function renderInstitutionList() {
   var container = dom.institutionList; if (!container) return;
   var items = loadInstitutions();
+  // Must be computed BEFORE makeRow runs: it is referenced inside the row
+  // builder, and used to sit after the first call — a TDZ ReferenceError that
+  // silently broke the whole institutions section in settings.
+  var canManage = effectivePermissions().canManageDevices;
   container.textContent = "";
   function makeRow(id, name, isDefault, canDelete) {
     var row = document.createElement("div"); row.className = "device-row institution-row";
@@ -128,11 +152,16 @@ function renderInstitutionList() {
     var meta = document.createElement("span"); meta.className = "device-seen";
     meta.textContent = count === null ? "Данных пока нет" : "Учеников в журнале: " + count;
     row.append(info, meta);
+    // Open button: the default institution is always openable; a non-default
+    // one only when it actually exists in the registry (stale ACTIVE ids from
+    // removed institutions must not offer a broken "open" action).
+    var openable = id === DEFAULT_INSTITUTION_ID || items.some(function (i) { return i.id === id; });
+    if (id === ACTIVE_INSTITUTION_ID && !openable) openable = true; // current tab's own row stays consistent
     var open = document.createElement("button"); open.type = "button"; open.className = "secondary institution-open";
     open.dataset.institutionId = id; open.textContent = id === ACTIVE_INSTITUTION_ID ? "Текущее" : "Открыть журнал";
-    open.disabled = id === ACTIVE_INSTITUTION_ID;
+    open.disabled = id === ACTIVE_INSTITUTION_ID || !openable;
     row.appendChild(open);
-    if (canManage) {
+    if (canManage && openable) {
       var ren = document.createElement("button"); ren.type = "button"; ren.className = "secondary institution-rename";
       ren.dataset.institutionId = id; ren.textContent = "Переименовать";
       ren.title = "Изменить название учреждения";
@@ -146,7 +175,6 @@ function renderInstitutionList() {
     }
     return row;
   }
-  var canManage = effectivePermissions().canManageDevices;
   container.appendChild(makeRow(DEFAULT_INSTITUTION_ID, institutionNameById(DEFAULT_INSTITUTION_ID), true, false));
   items.forEach(function (inst) { container.appendChild(makeRow(inst.id, inst.name, false, canManage)); });
   if (!items.length) {
@@ -214,7 +242,9 @@ function removeInstitution(id) {
   var suffixes = ["_attendance_diary_data", "_attendance_sync_config", "_attendance_device_id", "_attendance_poll_interval", "_attendance_settings_unlocked", "_attendance_settings_code_set", "_attendance_recovery_backups", "_attendance_news_dismissed", "_attendance_auth_accounts", "_attendance_auth_session"];
   try { suffixes.forEach(function (s) { storage.removeItem(id + s); }); } catch (e) { showToast("Не удалось стереть данные учреждения: " + e.message, "error"); return; }
   saveInstitutions(items.filter(function (i) { return i.id !== id; }));
-  try { if (storage.getItem(ACTIVE_INSTITUTION_KEY) === id) storage.removeItem(ACTIVE_INSTITUTION_KEY); } catch (e) {}
+  // The active pointer is device-wide and never namespaced — compare against
+  // the raw key, not the per-institution variant left by older builds.
+  try { if (storage.getItem(GLOBAL_ACTIVE_INSTITUTION_KEY) === id) storage.removeItem(GLOBAL_ACTIVE_INSTITUTION_KEY); } catch (e) {}
   showToast("Учреждение «" + inst.name + "» удалено вместе с его данными на этом устройстве.", "success");
 }
 
@@ -1026,6 +1056,12 @@ function renderUserList() {
     var linked = (state.students || []).find(function (s) { return s && !s.deleted && (s.accountId === account.id || authNormalizeName(s.name || "") === authNormalizeName(account.fullName || "")); });
     meta.textContent = linked ? "В журнале: " + linked.name : "В журнале: не привязан";
     row.appendChild(meta);
+    var rename = document.createElement("button"); rename.type = "button"; rename.className = "secondary user-rename";
+    rename.dataset.accountId = account.id;
+    rename.textContent = "Переименовать";
+    rename.disabled = !canManage;
+    rename.title = canManage ? "Изменить имя пользователя (синхронно с записью в журнале)" : "Переименовывать пользователей могут только учитель или тех. администрация";
+    row.appendChild(rename);
     var remove = document.createElement("button"); remove.type = "button"; remove.className = "danger user-remove";
     remove.dataset.accountId = account.id;
     remove.textContent = "Удалить";
