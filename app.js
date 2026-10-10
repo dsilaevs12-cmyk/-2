@@ -69,9 +69,12 @@ function initTheme() {
     var onChange = function () { updateThemeMeta(); updateThemeUI(); };
     if (mq.addEventListener) mq.addEventListener("change", onChange); else if (mq.addListener) mq.addListener(onChange);
   } catch (error) {}
-  var seg = document.getElementById("themeSegmented");
-  if (seg) seg.addEventListener("click", function (e) {
-    var btn = e.target.closest("[data-theme-choice]"); if (!btn) return;
+  // Wire by delegation on the whole account panel: works even when the markup
+  // lacks the wrapper id (older cached index.html) — only the segmented buttons
+  // carry [data-theme-choice], so clicks elsewhere are ignored.
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest ? e.target.closest("[data-theme-choice]") : null;
+    if (!btn) return;
     applyThemeChoice(btn.dataset.themeChoice, true);
     showToast(btn.dataset.themeChoice === "auto" ? "Тема следует настройке устройства" : btn.dataset.themeChoice === "dark" ? "Включена тёмная тема" : "Включена светлая тема", "info");
   });
@@ -173,6 +176,7 @@ if (ACTIVE_INSTITUTION_ID !== DEFAULT_INSTITUTION_ID) {
   STORAGE_KEY = instKey(STORAGE_KEY); SYNC_CONFIG_KEY = instKey(SYNC_CONFIG_KEY); DEVICE_ID_KEY = instKey(DEVICE_ID_KEY);
   INTERVAL_KEY = instKey(INTERVAL_KEY); SETTINGS_UNLOCK_KEY = instKey(SETTINGS_UNLOCK_KEY); SETTINGS_CODE_SET_KEY = instKey(SETTINGS_CODE_SET_KEY);
   BACKUP_KEY = instKey(BACKUP_KEY); NEWS_DISMISS_KEY = instKey(NEWS_DISMISS_KEY); AUTH_ACCOUNTS_KEY = instKey(AUTH_ACCOUNTS_KEY);
+  try { SHADOW_BAN_KEY = instKey(SHADOW_BAN_KEY); } catch (e) {}
   AUTH_SESSION_KEY = instKey(AUTH_SESSION_KEY); AUTH_TOMBSTONES_KEY = instKey(AUTH_TOMBSTONES_KEY);
   // ACTIVE_INSTITUTION_KEY stays deliberately UN-namespaced (see GLOBAL_ACTIVE_INSTITUTION_KEY):
   // the "where should a plain reload land" pointer is device-wide, so opening
@@ -1696,7 +1700,7 @@ function changeOwnDeviceRole() {
   var lines = DEVICE_ROLE_KEYS.map(function (key) {
     return (key === current ? "▶ " : "• ") + DEVICE_ROLES[key].label + " — " + DEVICE_ROLES[key].hint;
   }).join("\n");
-  var answer = window.prompt("Выберите роль этого устройства.\n\n" + lines + "\n\nВведите номер роли (1–3):", String(DEVICE_ROLE_KEYS.indexOf(current) + 1));
+  var answer = window.prompt("Выберите роль этого устройства.\n\n" + lines + "\n\nВведите номер роли (1–" + DEVICE_ROLE_KEYS.length + "):", String(DEVICE_ROLE_KEYS.indexOf(current) + 1));
   if (answer === null) return;
   var index = parseInt(answer.trim(), 10) - 1;
   if (!(index >= 0 && index < DEVICE_ROLE_KEYS.length)) { showToast("Нужно число от 1 до " + DEVICE_ROLE_KEYS.length, "warning"); return; }
@@ -1925,6 +1929,102 @@ function init() {
   if (syncWritable() && syncRuntime.pollIntervalMs > 0) { fullSync("auto"); startPolling(); }
 }
 
+/* ---------- Shadow ban (settings brute-force protection) ---------- */// Synced ban registry (lives inside the journal payload, visible to every
+// connected device): admins can ban any synced device by its public IP or ID.
+var BAN_REASON_ATTEMPTS = "5 неверных кодов доступа к настройкам";
+var BAN_REASON_MANUAL = "выдан через настройки";
+function normalizeBanEntry(v) {
+  if (!v || typeof v !== "object") return null;
+  var ip = String(v.ip || "").trim().slice(0, 45);
+  var devId = validId(v.deviceId) ? v.deviceId : "";
+  if (!ip && !devId) return null;
+  return { id: validId(v.id) ? v.id : generateId(), ip: ip, deviceId: devId, reason: String(v.reason || BAN_REASON_MANUAL).slice(0, 120), by: validId(v.by) ? v.by : "", createdAt: Number(v.createdAt) || 0, clock: cleanClock(v.clock, v.createdAt) };
+}
+function mergeBans(local, remote) {
+  var result = {}, list = (Array.isArray(local) ? local : []).concat(Array.isArray(remote) ? remote : []);
+  list.forEach(function (raw) { var b = normalizeBanEntry(raw); if (b) result[b.id] = b; });
+  return Object.keys(result).map(function (k) { return result[k]; });
+}
+function currentIp() { return publicIpInfo().ip; }
+function isLocalIpBanned() {
+  var ip = currentIp();
+  if (!ip) return false;
+  return (state.bans || []).some(function (b) { return b.ip && b.ip === ip; });
+}
+function isThisDeviceShadowBanned() { return isDeviceShadowBanned() || isLocalIpBanned(); }
+function banDevice(entry, reason) {
+  if (!effectivePermissions().canManageDevices) { showToast("Выдавать бан может только учитель или тех. администрация", "warning"); return false; }
+  var list = state.bans || (state.bans = []);
+  if (list.some(function (b) { return (entry.deviceId && b.deviceId === entry.deviceId) || (entry.ip && b.ip === entry.ip); })) { showToast("Это устройство уже в бане", "info"); return false; }
+  var time = nextTimestamp();
+  list.push({ id: generateId(), ip: entry.ip || "", deviceId: entry.deviceId || "", reason: reason || BAN_REASON_MANUAL, by: deviceId, createdAt: Date.now(), clock: causalActor() ? undefined : undefined, updatedAt: time, actor: deviceId });
+  markChanged(["bans"]); scheduleSaveLocal(); scheduleSync(); renderShadowBanSection(); renderDeviceList();
+  showToast("Бан выдан" + (entry.ip ? " (IP " + entry.ip + ")" : "") + ". Синхронизируйте устройства для применения.", "success");
+  return true;
+}
+function unbanById(id) {
+  if (!effectivePermissions().canManageDevices) { showToast("Снимать бан может только учитель или тех. администрация", "warning"); return false; }
+  var before = (state.bans || []).length;
+  state.bans = (state.bans || []).filter(function (b) { return b.id !== id; });
+  if ((state.bans || []).length === before) { showToast("Заявка на разбан не найдена", "warning"); return false; }
+  markChanged(["bans"]); scheduleSaveLocal(); scheduleSync(); renderShadowBanSection(); renderDeviceList();
+  showToast("Бан снят. Устройства применят изменение после ближайшей синхронизации.", "success");
+  return true;
+}
+// Apply the synced registry locally: my IP banned -> settings locked; my IP was
+// unban-requested and the admin approved -> local ban lifted automatically.
+function applyBansToDevice() {
+  var ip = currentIp(), banned = (state.bans || []).some(function (b) { return b.ip && ip && b.ip === ip; });
+  var local = getShadowBan();
+  if (banned && !local) {
+    var rec = { attempts: WRONG_CODE_LIMIT, lastAt: Date.now(), banned: true, since: Date.now(), ip: ip };
+    try { if (storage) storage.setItem(SHADOW_BAN_KEY, JSON.stringify(rec)); } catch (e) {}
+    showToast("Устройство заблокировано администратором (теневой бан по IP " + ip + ").", "error");
+  } else if (!banned && local && local.pendingUnban) {
+    resetWrongSettingsAttempts();
+    showToast("Администратор одобрил снятие бана — доступ к настройкам восстановлен.", "success");
+  }
+}
+
+// Five consecutive wrong access codes put this device into a "shadow ban": the
+// settings stay unreachable until an administrator lifts it from the dev panel
+// (possible only while NOT banned — i.e. from another device or before the ban).
+var SHADOW_BAN_KEY = "attendance_shadow_ban";
+var WRONG_CODE_LIMIT = 5;
+function getShadowBan() { try { var raw = storage && storage.getItem(SHADOW_BAN_KEY); if (!raw) return null; var v = JSON.parse(raw); return v && typeof v === "object" ? v : null; } catch (error) { return null; } }
+function isDeviceShadowBanned() { return Boolean(getShadowBan()); }
+function getWrongAttempts() { var b = getShadowBan(); return b && Number(b.attempts) || 0; }
+function recordWrongSettingsAttempt() {
+  var b = getShadowBan() || {}; b.attempts = (Number(b.attempts) || 0) + 1; b.lastAt = Date.now();
+  try { if (storage) storage.setItem(SHADOW_BAN_KEY, JSON.stringify(b)); } catch (error) {}
+  return Math.max(0, WRONG_CODE_LIMIT - b.attempts);
+}
+function resetWrongSettingsAttempts() { try { if (storage) storage.removeItem(SHADOW_BAN_KEY); } catch (error) {} }
+function applyShadowBan() {
+  var b = getShadowBan() || {};
+  b.banned = true; b.since = Date.now(); b.ip = publicIpInfo().ip || "не определён";
+  try { if (storage) storage.setItem(SHADOW_BAN_KEY, JSON.stringify(b)); } catch (error) {}
+  showToast("Превышено число неверных кодов: это устройство отправлено в теневой бан.", "error");
+}
+function liftShadowBan() {
+  try { if (storage) storage.removeItem(SHADOW_BAN_KEY); } catch (error) {}
+  showToast("Теневой бан снят с этого устройства.", "success");
+  renderShadowBanSection();
+}
+// Public IP of this device (best effort — used only as a label for the ban).
+var publicIpCache = { ip: "", fetchedAt: 0 };
+function publicIpInfo() { return publicIpCache; }
+function fetchPublicIp() {
+  if (!navigator.onLine || publicIpCache.fetchedAt && Date.now() - publicIpCache.fetchedAt < 6 * 3600 * 1000) return;
+  ["https://api.ipify.org?format=json"].forEach(function (url) {
+    try {
+      fetch(url, { cache: "no-store" }).then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) { if (j && j.ip) { publicIpCache.ip = String(j.ip).slice(0, 45); publicIpCache.fetchedAt = Date.now(); if (typeof renderShadowBanSection === "function") renderShadowBanSection(); } })
+        .catch(function () {});
+    } catch (error) {}
+  });
+}
+
 // Presentation preferences remain local and are excluded from the synced diary.
 var VIEW_PREFERENCE_KEY = "attendance_view_mode";
 var DEFAULT_SETTINGS_ACCESS_CODE = "020912";
@@ -2005,7 +2105,15 @@ function openPasswordModal() {
 function closePasswordModal() { dom.settingsPasswordInput.value = ""; dom.settingsPasswordError.textContent = ""; closeModal(); }
 function submitSettingsCode(event) {
   event.preventDefault();
-  if (dom.settingsPasswordInput.value !== SETTINGS_ACCESS_CODE) { dom.settingsPasswordError.textContent = "Неверный код. Попробуйте ещё раз."; dom.settingsPasswordInput.setAttribute("aria-invalid", "true"); dom.settingsPasswordInput.value = ""; dom.settingsPasswordInput.focus(); return; }
+  // Shadow-ban gate: after five consecutive wrong codes this device is locked
+  // out of the settings until an admin lifts the ban (see dev panel «Баны»).
+  if (isDeviceShadowBanned()) { dom.settingsPasswordError.textContent = "Устройство заблокировано (теневой бан). Доступ к настройкам только после снятия бана администратором."; dom.settingsPasswordInput.setAttribute("aria-invalid", "true"); dom.settingsPasswordInput.value = ""; return; }
+  if (dom.settingsPasswordInput.value !== SETTINGS_ACCESS_CODE) {
+    var left = recordWrongSettingsAttempt();
+    if (left === 0) { applyShadowBan(); openPasswordModal(); dom.settingsPasswordError.textContent = "Превышено число попыток: устройство отправлено в теневой бан."; dom.settingsPasswordInput.setAttribute("aria-invalid", "true"); return; }
+    dom.settingsPasswordError.textContent = "Неверный код. Осталось попыток: " + left + ". После пятой — теневой бан."; dom.settingsPasswordInput.setAttribute("aria-invalid", "true"); dom.settingsPasswordInput.value = ""; dom.settingsPasswordInput.focus(); return;
+  }
+  resetWrongSettingsAttempts();
   closePasswordModal(); state.devUnlocked = true;
   // The unlock survives tab closures until "Выйти из настроек" is pressed.
   try { if (storage) { storage.setItem(SETTINGS_UNLOCK_KEY, "1"); storage.setItem(SETTINGS_CODE_SET_KEY, String(Date.now())); } } catch (error) {}
