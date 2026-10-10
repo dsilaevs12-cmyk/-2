@@ -10,12 +10,12 @@ var GIST_FILENAME = "attendance.json";
 // cause of interface lag. New default: 30 s with an exponential backoff up to
 // 60 s while the connection keeps failing. Pushes after edits are debounced
 // 2.5 s so rapid tapping no longer queues several uploads in a row.
-var DEFAULT_POLL_INTERVAL_MS = 30000, PUSH_DEBOUNCE_MS = 2500;
+var DEFAULT_POLL_INTERVAL_MS = 60000, PUSH_DEBOUNCE_MS = 2500;
 // One-time migration of previously saved intervals: devices that still carry
 // the old aggressive "5 s" or "15 s" setting would keep hammering GitHub and
 // re-merging/re-rendering every few seconds — the main background lag source.
 // Manual mode (0) and the gentle "60 s" choice are left untouched.
-function migratePollInterval(ms) { return ms === 5000 || ms === 15000 ? DEFAULT_POLL_INTERVAL_MS : ms; }
+function migratePollInterval(ms) { return ms === 5000 || ms === 15000 || ms === 30000 ? DEFAULT_POLL_INTERVAL_MS : ms; }
 var SETTINGS_UNLOCK_KEY = "attendance_settings_unlocked";
 var SETTINGS_CODE_SET_KEY = "attendance_settings_code_set";
 var BACKUP_KEY = "attendance_recovery_backups";
@@ -2083,7 +2083,19 @@ function loadInterval() {
       if (migrated !== interval) { interval = migrated; storage.setItem(INTERVAL_KEY, String(interval)); }
       storage.setItem("attendance_sync_speed_v35","1");
     }
-    if ([0, 5000, 15000, 30000, 60000].indexOf(interval) !== -1) syncRuntime.pollIntervalMs = interval;
+    // v36: even 30 s background sync still caused visible lag on weak devices
+    // (each poll = fetch + full JSON merge + possible re-render). Upgrade every
+    // aggressive cadence to a calm pace, once. Manual mode (0) is preserved.
+    // The former "every minute" choice was also bumped to 5 minutes because it
+    // overlapped with the exponential error backoff and kept waking the CPU.
+    if(storage && !storage.getItem("attendance_sync_speed_v36")) {
+      if ([5000, 15000, 30000, 60000].indexOf(interval) !== -1) {
+        interval = DEFAULT_POLL_INTERVAL_MS;
+        storage.setItem(INTERVAL_KEY, String(interval));
+      }
+      storage.setItem("attendance_sync_speed_v36","1");
+    }
+    if ([0, 5000, 15000, 30000, 60000, 300000].indexOf(interval) !== -1) syncRuntime.pollIntervalMs = interval;
   } catch (error) {}
 }
 function saveInterval() {
@@ -2585,7 +2597,7 @@ function syncSuccess(reason, sentRevision, unchanged) {
 function syncRetry(error) {
   if (!syncAutomatic() || syncHardError(error)) return;
   clearTimeout(syncRuntime.retryTimer);
-  var delays = [5000, 10000, 20000, 30000, 60000];
+  var delays = [15000, 30000, 60000, 120000, 300000];
   var delay = error.retryAfter || delays[Math.min(Math.max(syncRuntime.consecutiveErrors - 1, 0), delays.length - 1)];
   syncRuntime.retryAt = Date.now() + delay;
   var generation = syncRuntime.generation;
@@ -2856,7 +2868,7 @@ syncListen(dom.forcePullButton, "click", forcePull);
 if (dom.forcePushButton) dom.forcePushButton.textContent = "Отправить изменения";
 syncListen(dom.intervalSelect, "change", function (event) {
   var interval = Number(event.target.value);
-  if ([0, 5000, 15000, 30000, 60000].indexOf(interval) === -1) return;
+  if ([0, 5000, 15000, 30000, 60000, 300000].indexOf(interval) === -1) return;
   syncInvalidate(); syncRuntime.pollIntervalMs = interval; saveInterval(); startPolling(); updateSyncUI();
   if (interval > 0) scheduleSync();
   showToast(interval === 0 ? "Только вручную: автоматические запросы отключены" : "Автосинхронизация включена", "success");
