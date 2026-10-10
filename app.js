@@ -25,6 +25,57 @@ var AUTH_SESSION_KEY = "attendance_auth_session";
 // Local deletion tombstones for account sync (so a removed account does not
 // come back from another device's older Gist copy).
 var AUTH_TOMBSTONES_KEY = "attendance_auth_tombstones";
+// Theme: by default the app follows the device setting (light/dark) via CSS
+// prefers-color-scheme; a manual choice is remembered per device in
+// localStorage and overrides it until reset back to "auto".
+var THEME_KEY = "attendance_theme";
+// --- Device-adaptive theme (light/dark) -------------------------------------
+// Default mode is "auto": the app follows the OS setting of the phone/tablet/PC
+// via CSS prefers-color-scheme and reacts to live system changes. A manual
+// choice ("light"/"dark") is stored per device in localStorage and overrides
+// the system until the user returns to "auto". Applied inline on <html> before
+// first paint to avoid a white flash when opening the app in dark mode.
+function getThemePreference() { try { var v = storage && storage.getItem(THEME_KEY); return v === "light" || v === "dark" ? v : "auto"; } catch (error) { return "auto"; } }
+function resolveEffectiveTheme(pref) { if (pref === "light" || pref === "dark") return pref; try { return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"; } catch (error) { return "light"; } }
+function applyThemeChoice(pref, persist) {
+  var el = document.documentElement;
+  if (pref === "light" || pref === "dark") el.setAttribute("data-theme", pref); else el.removeAttribute("data-theme");
+  if (persist) { try { if (pref === "auto") storage.removeItem(THEME_KEY); else storage.setItem(THEME_KEY, pref); } catch (error) {} }
+  updateThemeMeta(); updateThemeUI();
+}
+function updateThemeMeta() {
+  var dark = resolveEffectiveTheme(getThemePreference()) === "dark";
+  var m = document.querySelector('meta[name="theme-color"]');
+  if (m) m.setAttribute("content", dark ? "#171008" : "#c2410c");
+  var cs = document.querySelector('meta[name="color-scheme"]');
+  if (cs) cs.setAttribute("content", getThemePreference() === "auto" ? "light dark" : dark ? "dark" : "light");
+}
+function updateThemeUI() {
+  try {
+    var pref = getThemePreference(), eff = resolveEffectiveTheme(pref);
+    var seg = document.getElementById("themeSegmented");
+    if (seg) seg.querySelectorAll("[data-theme-choice]").forEach(function (b) {
+      var active = b.dataset.themeChoice === pref;
+      b.classList.toggle("is-active", active); b.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+    var status = document.getElementById("themeCardStatus");
+    if (status) status.textContent = pref === "auto" ? (eff === "dark" ? "Сейчас: тёмная (системная)" : "Сейчас: светлая (системная)") : (eff === "dark" ? "Сейчас: тёмная" : "Сейчас: светлая");
+  } catch (error) {}
+}
+function initTheme() {
+  applyThemeChoice(getThemePreference(), false);
+  try {
+    var mq = window.matchMedia("(prefers-color-scheme: dark)");
+    var onChange = function () { updateThemeMeta(); updateThemeUI(); };
+    if (mq.addEventListener) mq.addEventListener("change", onChange); else if (mq.addListener) mq.addListener(onChange);
+  } catch (error) {}
+  var seg = document.getElementById("themeSegmented");
+  if (seg) seg.addEventListener("click", function (e) {
+    var btn = e.target.closest("[data-theme-choice]"); if (!btn) return;
+    applyThemeChoice(btn.dataset.themeChoice, true);
+    showToast(btn.dataset.themeChoice === "auto" ? "Тема следует настройке устройства" : btn.dataset.themeChoice === "dark" ? "Включена тёмная тема" : "Включена светлая тема", "info");
+  });
+}
 var TOMBSTONE_RETENTION_MS = 180 * 24 * 60 * 60 * 1000; // half a year
 var DEFAULT_VERSION_TEXT = "версия: 3.3";
 var DEFAULT_MAINTENANCE_MSG = "Журнал временно на обслуживании. Попробуйте вернуться позже.";
@@ -1787,7 +1838,7 @@ function init() {
   try { if (sessStorage) sessStorage.removeItem("attendance_dev_unlocked"); } catch (error) {}
   try { if (!state.devUnlocked && storage && storage.getItem(SETTINGS_UNLOCK_KEY) === "1") state.devUnlocked = true; } catch (error) {}
   if (!storage) updateLocalStatus("Только в этой вкладке", true);
-  loadViewPreference(); dom.intervalSelect.value = String(syncRuntime.pollIntervalMs); wireCoreEvents(); wireViewEvents(); wireProjectEvents(); wireAppUpdates(); updateSyncUI(); render(); applyRoleRestrictions();
+  loadViewPreference(); initTheme(); dom.intervalSelect.value = String(syncRuntime.pollIntervalMs); wireCoreEvents(); wireViewEvents(); wireProjectEvents(); wireAppUpdates(); updateSyncUI(); render(); applyRoleRestrictions();
   // Authentication gate: the very first opening of a device must show the
   // forced register/login screen. Only after a successful login (with 2FA)
   // or registration does the journal unlock for this device.

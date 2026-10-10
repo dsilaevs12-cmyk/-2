@@ -1,5 +1,6 @@
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#c2410c"><meta name="color-scheme" content="light dark"><title>Посещаемость — журнал класса</title><style>
-    :root {
+    html[data-theme="light"],
+    html {
       /* Autumn gamma palette (warm hue-shifted from the blue set) */
       --primary: #c2410c;
       --primary-dark: #9a3412;
@@ -84,7 +85,7 @@
     }
 
     @media (prefers-color-scheme: dark) {
-      :root {
+      html:not([data-theme="light"]) {
         /* Autumn gamma palette, dark variant */
         --primary: #f97316;
         --primary-dark: #ea580c;
@@ -145,6 +146,9 @@
       scroll-behavior: smooth;
     }
 
+
+    html[data-theme="light"] { color-scheme: light; }
+    html[data-theme="dark"] { color-scheme: dark; }
     body {
       margin: 0;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, Arial, sans-serif;
@@ -3352,3 +3356,21 @@ input:not([type]), select, textarea { border-radius: var(--radius-sm); }
   }
   .header-actions button{font-size:11px !important;min-height:38px !important;padding:5px 8px !important}
 }
+
+/* ---- Theme picker card (Мой аккаунт) — device-adaptive light/dark ---- */
+.theme-card { margin: 14px 0; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-1); }
+.theme-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.theme-card-title { font-weight: 700; color: var(--text-strong); font-size: 15px; }
+.theme-card-status { font-size: 12.5px; color: var(--muted); }
+.theme-segmented { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 5px; border-radius: var(--radius-md); background: var(--surface-2); border: 1px solid var(--border-subtle); }
+.theme-seg-btn { appearance: none; border: 1px solid transparent; background: transparent; color: var(--text-soft); font: inherit; font-size: 13px; line-height: 1.25; text-align: center; padding: 9px 6px; min-height: 42px; border-radius: var(--radius-sm); cursor: pointer; transition: background .18s ease, color .18s ease, box-shadow .18s ease; }
+.theme-seg-btn:hover { color: var(--text-strong); }
+.theme-seg-btn.is-active { background: var(--card); color: var(--primary); font-weight: 700; border-color: var(--border); box-shadow: var(--shadow-sm); }
+.theme-card-hint { margin: 10px 0 0; font-size: 12px; color: var(--muted); line-height: 1.45; }
+@media screen and (max-width: 480px) {
+  .theme-seg-btn { font-size: 12px; min-height: 40px; padding: 8px 4px; }
+}
+@media (prefers-color-scheme: dark) {
+      html:not([data-theme="light"]) .theme-seg-btn.is-active { box-shadow: 0 1px 3px rgba(0,0,0,.5); }
+    }
+    html[data-theme="dark"] .theme-seg-btn.is-active { box-shadow: 0 1px 3px rgba(0,0,0,.5); }
