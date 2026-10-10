@@ -2881,3 +2881,126 @@ input:not([type]), select, textarea { border-radius: var(--radius-sm); }
   .version-badge::before, .version-badge-dot, .maintenance-icon,
   .maintenance-active-badge, .sync-status.busy .status-dot { animation: none !important; }
 }
+
+/* ============================================================
+   LIQUID GLASS pass — every button on the interface shares one
+   translucent frosted-glass treatment (both themes). Screen-only:
+   print/export keeps its own flat styles. Placed last so it wins
+   over earlier opaque backgrounds; radius/size exceptions are kept
+   via :not() so circles stay circles and ghost nav items stay flat.
+   ============================================================ */
+@media screen {
+  :root {
+    /* Glass recipe for buttons: tinted translucent fill + backdrop blur.
+       Opacity values live in tokens so dark theme overrides them once. */
+    --btn-glass-blur: 10px;
+    --btn-glass-primary: linear-gradient(168deg, rgba(120, 190, 215, .72), rgba(32, 105, 140, .74) 46%, rgba(16, 82, 112, .8));
+    --btn-glass-secondary: linear-gradient(160deg, rgba(255, 255, 255, .6), rgba(222, 240, 250, .4));
+    --btn-glass-danger: linear-gradient(160deg, rgba(255, 224, 232, .66), rgba(244, 196, 210, .5));
+    --btn-glass-success: linear-gradient(160deg, rgba(205, 242, 226, .68), rgba(158, 222, 196, .52));
+    --btn-glass-warning: linear-gradient(160deg, rgba(255, 238, 205, .7), rgba(248, 219, 160, .54));
+    --btn-glass-line: rgba(255, 255, 255, .85);
+    --btn-glass-shadow: inset 0 1px 2px rgba(255, 255, 255, .85), inset 0 -1px 2px rgba(18, 103, 140, .16), 0 3px 10px rgba(71, 132, 168, .13);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --btn-glass-primary: linear-gradient(168deg, rgba(86, 150, 182, .6), rgba(38, 88, 120, .66) 46%, rgba(24, 62, 90, .74));
+      --btn-glass-secondary: linear-gradient(160deg, rgba(64, 108, 144, .5), rgba(38, 74, 104, .44));
+      --btn-glass-danger: linear-gradient(160deg, rgba(122, 58, 84, .6), rgba(88, 42, 66, .55));
+      --btn-glass-success: linear-gradient(160deg, rgba(38, 106, 92, .6), rgba(24, 76, 66, .55));
+      --btn-glass-warning: linear-gradient(160deg, rgba(120, 96, 46, .6), rgba(92, 72, 32, .55));
+      --btn-glass-line: rgba(190, 228, 250, .4);
+      --btn-glass-shadow: inset 0 1px 1px rgba(206, 234, 255, .3), inset 0 -1px 2px rgba(3, 20, 37, .35), 0 3px 10px rgba(3, 20, 37, .25);
+    }
+  }
+
+  /* Core: all buttons become frosted glass. Exceptions keep their shape:
+     - attendance cells / option chips / day icons already have their own
+       state-tinted translucent look (kept below with matching tokens);
+     - round icon buttons (.hw-delete, month arrows) must not lose geometry;
+     - inactive sidebar/dock nav items stay flat ghosts by design. */
+  button:not(.attendance-button):not(.att-option):not(.day-status-icon):not(.student-card-trigger):not(.news-close):not(.hw-delete):not(#previousMonthButton):not(#nextMonthButton):not(.glass-navigation .nav-item:not(.is-active)) {
+    background: var(--btn-glass-secondary);
+    border: 1px solid var(--btn-glass-line);
+    color: var(--text-strong);
+    box-shadow: var(--btn-glass-shadow);
+    -webkit-backdrop-filter: blur(var(--btn-glass-blur)) saturate(145%);
+    backdrop-filter: blur(var(--btn-glass-blur)) saturate(145%);
+  }
+  /* Primary buttons: deeper translucent teal-blue glass, white text stays
+     readable on both light and dark frosts thanks to the darker gradient. */
+  button:not(.secondary):not(.danger):not(.warning):not(.success):not(.attendance-button):not(.att-option):not(.day-status-icon):not(.student-card-trigger):not(.news-close):not(.hw-delete):not(.device-tech-flag):not(.auth-tab):not(#previousMonthButton):not(#nextMonthButton):not(.view-switcher button):not(.glass-navigation .nav-item) {
+    background: var(--btn-glass-primary);
+    color: #f5fcff;
+  }
+  button.secondary, button.version-badge, button#reportsButton { background: var(--btn-glass-secondary); color: var(--text-strong); }
+  button.danger { background: var(--btn-glass-danger); color: var(--absent-text); border-color: rgba(235, 187, 198, .7); }
+  button.success { background: var(--btn-glass-success); color: var(--success); border-color: rgba(190, 235, 215, .7); }
+  button.warning { background: var(--btn-glass-warning); color: var(--late-text); border-color: rgba(231, 203, 146, .75); }
+  @media (prefers-color-scheme: dark) {
+    button.danger { border-color: rgba(140, 92, 112, .7); }
+    button.success { border-color: rgba(71, 150, 128, .7); }
+    button.warning { border-color: rgba(137, 116, 72, .75); }
+  }
+
+  /* Hover/active read as a brighter frost, not a different color. */
+  button:not(:disabled):hover { filter: brightness(1.06) saturate(115%); }
+  button:not(:disabled):active { filter: brightness(.97); }
+
+  /* Small controls inside settings lists: same glass, smaller blur (cheap). */
+  .user-remove, .class-remove, .device-tech-flag, .auth-tab {
+    -webkit-backdrop-filter: blur(6px) saturate(130%);
+    backdrop-filter: blur(6px) saturate(130%);
+  }
+  .device-tech-flag { background: var(--btn-glass-secondary); color: var(--text-soft); }
+  .device-tech-flag.is-active { background: var(--btn-glass-primary); color: #f5fcff; border-color: var(--btn-glass-line); }
+  .auth-tab { background: transparent; border: 1px solid transparent; box-shadow: none; }
+  .auth-tab.is-active { background: var(--btn-glass-secondary); border-color: var(--btn-glass-line); box-shadow: var(--btn-glass-shadow); color: var(--text-strong); }
+
+  /* Attendance cells: keep their geometry/state colors but align the frost
+     language (translucent fills + hairline highlight were already there). */
+  #attendanceTableCard .attendance-button.present { background: rgba(195, 238, 228, .55); }
+  #attendanceTableCard .attendance-button.absent { background: rgba(248, 220, 230, .6); }
+  #attendanceTableCard .attendance-button.late { background: rgba(255, 235, 201, .62); }
+  @media (prefers-color-scheme: dark) {
+    #attendanceTableCard .attendance-button.present { background: rgba(22, 85, 78, .6); }
+    #attendanceTableCard .attendance-button.absent { background: rgba(90, 51, 75, .62); }
+    #attendanceTableCard .attendance-button.late { background: rgba(86, 69, 45, .62); }
+  }
+
+  /* The homework "+" circle keeps its size but gets the primary frost. */
+  .hw-add-round { background: var(--btn-glass-primary); border: 1px solid var(--btn-glass-line); box-shadow: var(--btn-glass-shadow); -webkit-backdrop-filter: blur(8px) saturate(140%); backdrop-filter: blur(8px) saturate(140%); color: #f5fcff; }
+
+  /* Attendance picker chips ("Присутствовал / Не был / Онлайн"): same glass
+     family — translucent frosted fill, hairline highlight, cheap blur. */
+  .att-option {
+    background: var(--btn-glass-secondary);
+    border: 1px solid var(--btn-glass-line);
+    color: var(--text-strong);
+    box-shadow: var(--btn-glass-shadow);
+    -webkit-backdrop-filter: blur(6px) saturate(135%);
+    backdrop-filter: blur(6px) saturate(135%);
+  }
+  .att-option-present { background: var(--btn-glass-success); border-color: rgba(190, 235, 215, .7); color: var(--success); }
+  .att-option-absent { background: var(--btn-glass-danger); border-color: rgba(235, 187, 198, .7); color: var(--absent-text); }
+  .att-option-late { background: var(--btn-glass-warning); border-color: rgba(231, 203, 146, .75); color: var(--late-text); }
+  @media (prefers-color-scheme: dark) {
+    .att-option-present { border-color: rgba(71, 150, 128, .7); }
+    .att-option-absent { border-color: rgba(140, 92, 112, .7); }
+    .att-option-late { border-color: rgba(137, 116, 72, .75); }
+  }
+
+  /* Accessibility: users who opt out of translucency get flat fills back. */
+  @media (prefers-reduced-transparency: reduce) {
+    button:not(.attendance-button):not(.att-option):not(.day-status-icon):not(.student-card-trigger):not(.news-close):not(.hw-delete):not(#previousMonthButton):not(#nextMonthButton):not(.glass-navigation .nav-item:not(.is-active)) {
+      background: var(--card);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+    button:not(.secondary):not(.danger):not(.warning):not(.success):not(.attendance-button):not(.att-option):not(.day-status-icon):not(.student-card-trigger):not(.news-close):not(.hw-delete):not(.device-tech-flag):not(.auth-tab):not(#previousMonthButton):not(#nextMonthButton):not(.view-switcher button):not(.glass-navigation .nav-item) {
+      background: var(--primary);
+      color: #fff;
+    }
+    .hw-add-round { background: var(--primary); }
+  }
+}
