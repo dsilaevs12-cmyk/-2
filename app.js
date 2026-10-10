@@ -603,9 +603,18 @@ function cleanSyncAccount(account) {
     deleted: account.deleted === true
   };
   // Phone / secret word support the 2FA step of the login flow; keep them
-  // only when present so old local accounts stay byte-compatible.
+  // only when present so old local accounts stay byte-compatible. The local
+  // login flow stores the enrolled secret under "secretHash", but the sync
+  // layer historically read/wrote "secretWordHash": a hash saved under one
+  // name and verified under another never matched, so logging in with the
+  // secret-word second factor on ANOTHER device always failed ("Неверное
+  // секретное слово") even with the correct password. Accept both spellings
+  // on the way in and publish both on the way out for compatibility.
   if (typeof account.phone === "string" && account.phone.trim()) result.phone = account.phone.trim().slice(0, 30);
-  if (typeof account.secretWordHash === "string" && account.secretWordHash) result.secretWordHash = account.secretWordHash.slice(0, 200);
+  var syncedSecret = "";
+  if (typeof account.secretHash === "string" && account.secretHash) syncedSecret = account.secretHash;
+  else if (typeof account.secretWordHash === "string" && account.secretWordHash) syncedSecret = account.secretWordHash;
+  if (syncedSecret) { result.secretHash = syncedSecret.slice(0, 200); result.secretWordHash = result.secretHash; }
   return result;
 }
 function normalizeSyncAccounts(raw) {
@@ -701,7 +710,10 @@ function applySyncedAccounts(mergedList) {
       if (!fresh) return;
       byName[key] = { id: fresh.id, fullName: fresh.fullName, firstName: fresh.firstName, lastName: fresh.lastName, salt: fresh.salt, hash: fresh.hash, createdAt: fresh.createdAt };
       if (fresh.phone) byName[key].phone = fresh.phone;
-      if (fresh.secretWordHash) byName[key].secretWordHash = fresh.secretWordHash;
+      // The login flow verifies the secret word via account.secretHash; store
+      // the synced hash under that name (secretWordHash kept as a mirror for
+      // older builds reading this device's file).
+      if (fresh.secretHash || fresh.secretWordHash) byName[key].secretHash = fresh.secretHash || fresh.secretWordHash;
       added++;
     }
   });
@@ -1066,15 +1078,17 @@ async function handleAuthLogin(event) {
   }
   if (!account) { d.authLoginError.textContent = "Аккаунт не найден на этом устройстве. Подключите синхронизацию ниже («Синхронизировать с другим устройством») или зарегистрируйтесь."; switchAuthTab("register"); d.authRegLast.value = name.split(" ").slice(1).join(" "); d.authRegFirst.value = name.split(" ")[0] || ""; return; }
   // Step 1: verify the main password.
-  if (!authGateState.pending || authGateState.pending.accountId !== account.id || authGateState.pending.step !== "2fa") {
+  var resumingTwoFactor = authGateState.pending && authGateState.pending.accountId === account.id && authGateState.pending.step === "2fa";
+  if (!resumingTwoFactor) {
     d.authLoginSubmit.disabled = true; d.authLoginSubmit.textContent = "Проверяем…";
     try {
       var derived = await authDerive(pass, account.salt);
       if (derived !== account.hash) { d.authLoginError.textContent = "Неверный пароль."; d.authLoginPass.value = ""; d.authLoginPass.focus(); return; }
     } catch (error) { d.authLoginError.textContent = error.message || "Ошибка проверки пароля."; return; }
     finally { d.authLoginSubmit.disabled = false; d.authLoginSubmit.textContent = "Войти"; }
-    // Password OK → move to the second factor.
-    authGateState.pending = { accountId: account.id, fullName: account.fullName, step: "2fa", method: null };
+    // Password OK → move to the second factor. Remember salt/hash so step 2
+    // can confirm the account was not replaced by a sync in the meantime.
+    authGateState.pending = { accountId: account.id, fullName: account.fullName, step: "2fa", method: null, salt: account.salt, hash: account.hash };
     if (method === "code") {
       var code = authGenerateSmsCode();
       authGateState.smsCode = code; authGateState.smsExpiresAt = Date.now() + 5 * 60 * 1000;
@@ -1085,6 +1099,16 @@ async function handleAuthLogin(event) {
       d.authSecretWord.value = ""; d.authSecretWord.focus();
       d.authLoginError.textContent = "Пароль принят. Введите секретное слово.";
     }
+    return;
+  }
+  // Second attempt while already in the 2FA step: the password was verified on
+  // the first click. Re-deriving PBKDF2 (150k iterations) here would add a
+  // multi-second freeze on low-end devices, so skip it — but only for the
+  // exact pending account while its salt/hash are unchanged (a background
+  // sync could have replaced the record in between).
+  if (authGateState.pending.salt !== account.salt || authGateState.pending.hash !== account.hash) {
+    authGateState.pending = null;
+    d.authLoginError.textContent = "Данные аккаунта обновились. Нажмите «Войти» заново.";
     return;
   }
   // Step 2: verify the second factor.
@@ -1109,8 +1133,23 @@ async function handleAuthLogin(event) {
   }
   saveAuthSession({ accountId: account.id, fullName: account.fullName, method: method, at: Date.now() });
   authGateState.pending = null;
+  // The secret word / phone entered during login belong to this account: keep
+  // them locally BEFORE resetting the form and pushing the updated list, so
+  // the OTHER connected devices can use the same second factor. Previously the
+  // hash was saved under a field name the sync layer ignored (and the form was
+  // reset first), so cross-device logins always failed or lost the phone.
+  if (method === "secret" || d.authPhone.value.trim()) {
+    var liveAccount = null, accountList = loadAuthAccounts();
+    for (var li = 0; li < accountList.length; li++) { if (accountList[li].id === account.id) { liveAccount = accountList[li]; break; } }
+    if (liveAccount) {
+      var touched = false;
+      if (d.authPhone.value.trim() && liveAccount.phone !== d.authPhone.value.trim()) { liveAccount.phone = d.authPhone.value.trim(); touched = true; }
+      if (method === "secret" && !liveAccount.secretHash) { liveAccount.secretHash = secretDerived; touched = true; }
+      if (touched) { saveAuthAccounts(accountList); scheduleAccountSync("silent"); }
+    }
+  }
   d.authLoginForm.reset(); updateAuth2faStep();
-  closeAuthGate(); lastFlushDaysSig = null; lastHomeworkSig = null; lastAccountSig = null; render();
+  closeAuthGate(); lastFlushDaysSig = null; lastHomeworkSig = null; lastAccountSig = null; render(); applyRoleRestrictions();
   showToast("С возвращением, " + account.fullName + "! Вход подтверждён.", "success");
 }
 function updateAuth2faStep() {

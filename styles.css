@@ -2749,6 +2749,52 @@ body[data-tech-admin] .role-banner{background:#dff1ea;border-color:#176c5c;color
   .auth-gate { padding: 12px; align-items: flex-start; }
   .auth-card { padding: 20px 16px; border-radius: 16px; }
 }
+/* Tablet & desktop layout for the login screen: the mobile card is a single
+   narrow column with stacked fields, which on a 1024-1440 px screen leaves
+   most of the display empty and forces long scrolling to reach the sync
+   window. On tablets (portrait/landscape) widen the card slightly; on full
+   desktops go two-column — name+password side by side, the 2FA picker next to
+   its step — so the whole form fits without scrolling and taps land closer
+   together. Only grid placement changes; all existing sizes/paddings stay. */
+@media screen and (min-width: 701px) {
+  .auth-card { max-width: 560px; }
+}
+@media screen and (min-width: 900px) {
+  .auth-gate { padding: 32px; }
+  .auth-card { max-width: 820px; padding: 34px 38px; gap: 16px; }
+  .auth-card h3 { font-size: 28px; }
+  /* The card itself becomes the grid; both forms span the full width so only
+     ONE of them participates in placement at a time (the other is hidden). */
+  .auth-card { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 20px; align-items: start; }
+  .auth-card > .eyebrow, .auth-card > h3, .auth-card > .auth-subtitle,
+  .auth-card > .auth-tabs, .auth-card > form, .auth-card > .auth-sync,
+  .auth-card > #authSyncOpenButton, .auth-card > .auth-footnote { grid-column: 1 / -1; }
+  .auth-form { display: grid; grid-template-columns: subgrid; }
+  /* Registration: first/last name left, password/confirm right. */
+  #authRegisterForm label:nth-of-type(1) { grid-column: 1; grid-row: 1; }
+  #authRegisterForm label:nth-of-type(2) { grid-column: 1; grid-row: 2; }
+  #authRegisterForm label:nth-of-type(3) { grid-column: 2; grid-row: 1; }
+  #authRegisterForm label:nth-of-type(4) { grid-column: 2; grid-row: 2; }
+  #authRegisterError { grid-column: 1 / -1; margin: 0; min-height: 1em; }
+  #authRegisterForm .modal-actions { grid-column: 1 / -1; }
+  /* Login form: credentials left, second factor right. */
+  #authLoginName, #authLoginPass { width: 100%; }
+  #authLoginForm > label[for="authLoginName"] { grid-column: 1; grid-row: 1; }
+  #authLoginForm > label[for="authLoginPass"] { grid-column: 1; grid-row: 2; }
+  #authLoginForm .auth-2fa { grid-column: 2; grid-row: 1 / span 2; margin: 0; align-self: stretch; display: flex; flex-direction: column; justify-content: center; }
+  #authLoginForm .auth-2fa-step[data-method="code"] { display: flex; flex-direction: column; gap: 10px; }
+  #authLoginForm .auth-2fa-step[data-method="secret"] { display: block; }
+  #authLoginForm .auth-2fa-step[hidden] { display: none; }
+  #authLoginError { grid-column: 1 / -1; margin: 0; min-height: 1em; }
+  #authLoginForm .modal-actions { grid-column: 1 / -1; }
+  /* Sync window inside the gate: token + gist side by side on desktop. */
+  .auth-sync { display: grid; grid-template-columns: subgrid; }
+  .auth-sync[hidden] { display: none; }
+  .auth-sync-head, .auth-sync p, .auth-sync-actions { grid-column: 1 / -1; }
+  #authSyncToken { grid-column: 1; }
+  #authSyncGist { grid-column: 2; }
+  .auth-sync-public { grid-column: 1 / -1; }
+}
 
 /* Global "appearance:none" hides radio/checkbox controls — restore them for the auth 2FA picker. */
 .auth-2fa-option input[type="radio"] { appearance: auto; -webkit-appearance: radio; display: block; visibility: visible; opacity: 1; width: 18px; height: 18px; margin: 0; }
