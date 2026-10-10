@@ -22,6 +22,10 @@ var BACKUP_KEY = "attendance_recovery_backups";
 var NEWS_DISMISS_KEY = "attendance_news_dismissed";
 var AUTH_ACCOUNTS_KEY = "attendance_auth_accounts";
 var AUTH_SESSION_KEY = "attendance_auth_session";
+// Local deletion tombstones for account sync (so a removed account does not
+// come back from another device's older Gist copy).
+var AUTH_TOMBSTONES_KEY = "attendance_auth_tombstones";
+var TOMBSTONE_RETENTION_MS = 180 * 24 * 60 * 60 * 1000; // half a year
 var DEFAULT_VERSION_TEXT = "версия: 3.3";
 var DEFAULT_MAINTENANCE_MSG = "Журнал временно на обслуживании. Попробуйте вернуться позже.";
 var STATUS_PRESENT = "present", STATUS_ABSENT = "absent", STATUS_LATE = "late", STATUS_UNMARKED = "unmarked";
@@ -118,7 +122,7 @@ if (ACTIVE_INSTITUTION_ID !== DEFAULT_INSTITUTION_ID) {
   STORAGE_KEY = instKey(STORAGE_KEY); SYNC_CONFIG_KEY = instKey(SYNC_CONFIG_KEY); DEVICE_ID_KEY = instKey(DEVICE_ID_KEY);
   INTERVAL_KEY = instKey(INTERVAL_KEY); SETTINGS_UNLOCK_KEY = instKey(SETTINGS_UNLOCK_KEY); SETTINGS_CODE_SET_KEY = instKey(SETTINGS_CODE_SET_KEY);
   BACKUP_KEY = instKey(BACKUP_KEY); NEWS_DISMISS_KEY = instKey(NEWS_DISMISS_KEY); AUTH_ACCOUNTS_KEY = instKey(AUTH_ACCOUNTS_KEY);
-  AUTH_SESSION_KEY = instKey(AUTH_SESSION_KEY);
+  AUTH_SESSION_KEY = instKey(AUTH_SESSION_KEY); AUTH_TOMBSTONES_KEY = instKey(AUTH_TOMBSTONES_KEY);
   // ACTIVE_INSTITUTION_KEY stays deliberately UN-namespaced (see GLOBAL_ACTIVE_INSTITUTION_KEY):
   // the "where should a plain reload land" pointer is device-wide, so opening
   // another institution survives F5 / mobile tab restores.
@@ -570,6 +574,245 @@ function saveAuthAccounts(list) {
   if (!storage) throw new Error("Хранилище недоступно — не удалось сохранить аккаунт");
   storage.setItem(AUTH_ACCOUNTS_KEY, JSON.stringify(list));
 }
+/* ---------- Account sync between devices ---------- */
+// The account list (logins + PBKDF2 password hashes) now travels with the
+// regular Gist synchronization: every device keeps its own "accounts.device.
+// <id>.json" file inside the same Gist as the journal files, and the lists
+// are merged by lastKnownAt timestamps (a newer value always wins; equal
+// values merge their deletion tombstones). Passwords never leave the device
+// in clear text — only salted PBKDF2 hashes are uploaded, so a login works on
+// any connected device without transmitting the secret itself. Deletions are
+// remembered via tombstones so a removed account does not resurrect from an
+// older copy sitting in another device's file.
+function cleanSyncAccount(account) {
+  if (!account || typeof account !== "object") return null;
+  var fullName = String(account.fullName || "").trim().slice(0, 140);
+  if (!fullName) return null;
+  var id = validId(account.id) ? account.id : generateId();
+  var hash = typeof account.hash === "string" ? account.hash.slice(0, 200) : "";
+  var salt = typeof account.salt === "string" ? account.salt.slice(0, 64) : "";
+  var result = {
+    id: id,
+    fullName: fullName,
+    firstName: String(account.firstName || "").trim().slice(0, 60),
+    lastName: String(account.lastName || "").trim().slice(0, 60),
+    hash: hash, salt: salt,
+    createdAt: Number(account.createdAt) || Date.now(),
+    lastKnownAt: Number(account.lastKnownAt) || Number(account.createdAt) || 0,
+    updatedAt: Number(account.updatedAt) || Number(account.lastKnownAt) || 0,
+    deleted: account.deleted === true
+  };
+  // Phone / secret word support the 2FA step of the login flow; keep them
+  // only when present so old local accounts stay byte-compatible.
+  if (typeof account.phone === "string" && account.phone.trim()) result.phone = account.phone.trim().slice(0, 30);
+  if (typeof account.secretWordHash === "string" && account.secretWordHash) result.secretWordHash = account.secretWordHash.slice(0, 200);
+  return result;
+}
+function normalizeSyncAccounts(raw) {
+  var source = raw && typeof raw === "object" && Array.isArray(raw.accounts) ? raw.accounts : (Array.isArray(raw) ? raw : []);
+  var byName = Object.create(null);
+  source.forEach(function (item) {
+    var account = cleanSyncAccount(item);
+    if (!account) return;
+    var key = authNormalizeName(account.fullName);
+    var previous = byName[key];
+    if (!previous) { byName[key] = account; return; }
+    // Same person on two devices: the fresher record wins, but a deletion
+    // flag survives unless the winning side explicitly re-created it later.
+    var winner = (account.lastKnownAt || 0) >= (previous.lastKnownAt || 0) ? account : previous;
+    var loser = winner === account ? previous : account;
+    if (loser.deleted && !(winner.deleted) && (loser.lastKnownAt || 0) > (winner.updatedAt || 0)) winner.deleted = true;
+    byName[key] = winner;
+  });
+  return Object.keys(byName).sort().map(function (key) { return byName[key]; });
+}
+function loadAccountTombstones() {
+  try { var raw = storage && storage.getItem(AUTH_TOMBSTONES_KEY); var list = raw ? JSON.parse(raw) : []; return Array.isArray(list) ? list : []; }
+  catch (error) { return []; }
+}
+function saveAccountTombstones(list) {
+  if (!storage) return;
+  // Keep the file small: only recent tombstones are relevant for merging.
+  var cutoff = Date.now() - TOMBSTONE_RETENTION_MS;
+  var pruned = list.filter(function (t) { return t && t.fullName && Number(t.deletedAt) > cutoff; }).slice(-200);
+  try { storage.setItem(AUTH_TOMBSTONES_KEY, JSON.stringify(pruned)); } catch (error) {}
+}
+function rememberAccountDeletion(account) {
+  if (!account || !account.fullName) return;
+  var list = loadAccountTombstones();
+  var key = authNormalizeName(account.fullName);
+  var entry = { fullName: String(account.fullName).trim().slice(0, 140), deletedAt: Date.now(), id: validId(account.id) ? account.id : "" };
+  for (var i = 0; i < list.length; i++) {
+    if (list[i] && authNormalizeName(list[i].fullName) === key) { list[i] = entry; saveAccountTombstones(list); return; }
+  }
+  list.push(entry);
+  saveAccountTombstones(list);
+}
+function loadLocalSyncAccounts() {
+  var items = loadAuthAccounts().map(function (account) {
+    var item = cleanSyncAccount(account) || account;
+    if (!item.lastKnownAt) item.lastKnownAt = item.createdAt || 0;
+    if (!item.updatedAt) item.updatedAt = item.lastKnownAt;
+    return item;
+  });
+  // Deleted accounts travel as tombstones so other devices remove them too.
+  loadAccountTombstones().forEach(function (tombstone) {
+    if (!tombstone || !tombstone.fullName) return;
+    var alive = items.some(function (item) { return authNormalizeName(item.fullName) === authNormalizeName(tombstone.fullName); });
+    if (alive) return;
+    var stamped = Number(tombstone.deletedAt) || Date.now();
+    items.push({ id: validId(tombstone.id) ? tombstone.id : generateId(), fullName: String(tombstone.fullName).trim().slice(0, 140), firstName: "", lastName: "", hash: "", salt: "", createdAt: stamped, lastKnownAt: stamped, updatedAt: stamped, deleted: true });
+  });
+  return normalizeSyncAccounts(items);
+}
+function mergeSyncAccountLists(localList, remoteList) {
+  var byName = Object.create(null);
+  [].concat(localList || [], remoteList || []).forEach(function (account) {
+    var item = cleanSyncAccount(account);
+    if (!item) return;
+    var key = authNormalizeName(item.fullName);
+    var previous = byName[key];
+    if (!previous) { byName[key] = item; return; }
+    var winner = (item.lastKnownAt || 0) >= (previous.lastKnownAt || 0) ? item : previous;
+    var loser = winner === item ? previous : item;
+    // Tombstone propagation: an account deleted elsewhere stays deleted even
+    // if our copy still shows it as alive (deletion is the newest update).
+    if (loser.deleted && !winner.deleted && (loser.lastKnownAt || 0) > (winner.updatedAt || 0)) winner.deleted = true;
+    byName[key] = winner;
+  });
+  return Object.keys(byName).sort().map(function (key) { return byName[key]; });
+}
+// Write the merged list back into this device's local storage. Accounts that
+// exist locally keep their records untouched (they may carry extra fields);
+// genuinely new accounts become loggable here, deleted ones disappear.
+function applySyncedAccounts(mergedList) {
+  var local = loadAuthAccounts();
+  var byName = Object.create(null);
+  local.forEach(function (account) { byName[authNormalizeName(account.fullName)] = account; });
+  var added = 0, removed = 0;
+  (mergedList || []).forEach(function (synced) {
+    var key = authNormalizeName(synced.fullName);
+    if (synced.deleted) {
+      if (byName[key]) { removed++; delete byName[key]; }
+      return;
+    }
+    if (!byName[key]) {
+      var fresh = cleanSyncAccount(synced);
+      if (!fresh) return;
+      byName[key] = { id: fresh.id, fullName: fresh.fullName, firstName: fresh.firstName, lastName: fresh.lastName, salt: fresh.salt, hash: fresh.hash, createdAt: fresh.createdAt };
+      if (fresh.phone) byName[key].phone = fresh.phone;
+      if (fresh.secretWordHash) byName[key].secretWordHash = fresh.secretWordHash;
+      added++;
+    }
+  });
+  var next = Object.keys(byName).map(function (key) { return byName[key]; });
+  if (added || removed) {
+    try { saveAuthAccounts(next); } catch (error) { return { added: 0, removed: 0, error: error.message }; }
+  }
+  return { added: added, removed: removed };
+}
+async function fetchGistFiles(config) {
+  var headers = githubHeaders(config);
+  var response = await syncFetch("https://api.github.com/gists/" + encodeURIComponent(config.gistId), { method: "GET", headers: headers }, config);
+  if (!response.ok) throw syncHTTPError(response);
+  var gist = await response.json();
+  syncCheckGeneration(config);
+  if (!gist || typeof gist !== "object" || !gist.files || typeof gist.files !== "object" || Array.isArray(gist.files)) throw new Error("Некорректная структура ответа Gist");
+  if (gist.truncated) throw new Error("Gist содержит слишком много файлов: GitHub вернул неполный список.");
+  return gist.files;
+}
+async function fetchAccountsFromGist(config) {
+  var names = [];
+  if (!config.token) {
+    // Read-only path: anonymous API calls are blocked by CORS, so scrape the
+    // public Gist page like the journal reader does.
+    var anonFiles = await fetchPublicGistFiles(config);
+    names = Object.keys(anonFiles).filter(function (name) { return /^accounts\.device\.[a-zA-Z0-9_.-]+\.json$/.test(name); }).sort();
+    var anonResult = [];
+    for (var i = 0; i < names.length; i++) {
+      var parsedAnon = null;
+      try { parsedAnon = JSON.parse(String(anonFiles[names[i]].content || "")); } catch (error) { continue; }
+      anonResult.push(parsedAnon);
+    }
+    return anonResult;
+  }
+  var files = await fetchGistFiles(config);
+  names = Object.keys(files).filter(function (name) { return /^accounts\.device\.[a-zA-Z0-9_.-]+\.json$/.test(name); }).sort();
+  var sources = [];
+  for (var index = 0; index < names.length; index++) {
+    var name = names[index], file = files[name];
+    var text = file.content;
+    if (file.truncated) {
+      var rawUrl;
+      try { rawUrl = new URL(file.raw_url); } catch (error) { continue; }
+      if (rawUrl.protocol !== "https:" || rawUrl.hostname !== "gist.githubusercontent.com" || rawUrl.username || rawUrl.password) continue;
+      var raw = await syncFetch(rawUrl.href, { method: "GET", redirect: "error" }, config);
+      if (!raw.ok) throw syncHTTPError(raw);
+      text = await raw.text();
+      syncCheckGeneration(config);
+    }
+    if (typeof text !== "string" || !text.trim()) continue;
+    var parsed;
+    try { parsed = JSON.parse(text); } catch (error) { continue; }
+    sources.push(parsed);
+  }
+  return sources;
+}
+function accountsFilename() {
+  var writer = String(deviceId || getDeviceId()).replace(/[^a-zA-Z0-9_-]/g, "");
+  if (!(navigator.locks && typeof navigator.locks.request === "function")) writer += ".tab." + syncRuntime.tabWriterId;
+  return "accounts.device." + writer + ".json";
+}
+async function pushAccountsToGist(accounts, config) {
+  if (!config.token) throw new Error("Нет токена GitHub: аккаунты можно только загружать из публичного Gist.");
+  var content = JSON.stringify({ version: 1, updatedAt: Date.now(), deviceId: deviceId, accounts: accounts });
+  if (new TextEncoder().encode(content).byteLength > 8 * 1024 * 1024) throw new Error("Список аккаунтов превышает безопасный предел файла Gist.");
+  var files = {}; files[accountsFilename()] = { content: content };
+  var response = await syncFetch("https://api.github.com/gists/" + encodeURIComponent(config.gistId), {
+    method: "PATCH", headers: Object.assign({ "Content-Type": "application/json" }, githubHeaders(config)), body: JSON.stringify({ files: files })
+  }, config);
+  if (!response.ok) throw syncHTTPError(response);
+  syncCheckGeneration(config);
+}
+// Full round trip: upload this device's accounts, download every device file
+// from the same Gist, merge by timestamps and write the result locally.
+async function syncAccountsOnce(options) {
+  options = options || {};
+  var config = syncOperationConfig();
+  if (!syncConfigured()) { var missing = new Error("Синхронизация не подключена"); missing.noUpload = true; throw missing; }
+  var mergedList = null, uploaded = false, uploadError = null;
+  if (config.token && !options.pullOnly) {
+    try { await pushAccountsToGist(loadLocalSyncAccounts(), config); uploaded = true; }
+    catch (error) { if (error.stale) throw error; uploadError = error; }
+  }
+  var sources = await fetchAccountsFromGist(config);
+  syncCheckGeneration(config);
+  mergedList = sources.reduce(function (acc, raw) { return mergeSyncAccountLists(acc, normalizeSyncAccounts(raw)); }, loadLocalSyncAccounts());
+  var applied = applySyncedAccounts(mergedList);
+  // Push the merged view so other devices immediately see accounts that only
+  // existed locally (e.g. registered right after the last sync).
+  if (uploaded && config.token) {
+    try { await pushAccountsToGist(mergedList, config); } catch (error) { if (error.stale) throw error; }
+  }
+  if (uploadError) throw uploadError;
+  return { added: applied.added, removed: applied.removed, uploaded: uploaded, total: mergedList.filter(function (a) { return !a.deleted; }).length };
+}
+// Fire-and-forget helper used by the journal sync cycle and account edits.
+function scheduleAccountSync(reason) {
+  if (!syncConfigured() || accountSyncRuntime.isRunning) return;
+  if (reason === "auto" && !syncAutomatic()) return;
+  accountSyncRuntime.isRunning = true;
+  var config = syncOperationConfig();
+  syncAccountsOnce().then(function (result) {
+    if (config.generation === syncRuntime.generation) accountSyncRuntime.lastRun = Date.now();
+    var announced = Boolean((result.added || result.removed) && reason !== "silent");
+    if (announced) showToast("Аккаунты синхронизированы: новых " + result.added + ", удалённых " + result.removed + ".", "success");
+  }).catch(function (error) {
+    if (error.stale || reason === "silent" || reason === "auto") return;
+    showToast("Не удалось синхронизировать аккаунты: " + (error.message || "ошибка"), "warning");
+  }).finally(function () { accountSyncRuntime.isRunning = false; });
+}
+var accountSyncRuntime = { isRunning: false, lastRun: 0 };
 function currentAuthSession() {
   try { var raw = storage && storage.getItem(AUTH_SESSION_KEY); var s = raw ? JSON.parse(raw) : null; return s && typeof s.fullName === "string" ? s : null; }
   catch (error) { return null; }
@@ -757,6 +1000,9 @@ async function handleAuthRegister() {
     var derived = await authDerive(pass1, salt);
     accounts.push({ id: generateId(), fullName: fullName, firstName: first, lastName: last, salt: salt, hash: derived, createdAt: Date.now() });
     saveAuthAccounts(accounts);
+    // Push the fresh account list to the Gist immediately (fire-and-forget):
+    // other connected devices receive it on their next sync cycle.
+    scheduleAccountSync("silent");
     saveAuthSession({ accountId: accounts[accounts.length - 1].id, fullName: fullName, method: "register", at: Date.now() });
     d.authRegisterForm.reset();
     closeAuthGate(); lastFlushDaysSig = null; lastHomeworkSig = null; lastAccountSig = null; render(); applyRoleRestrictions(); renderDeviceList();
@@ -1171,6 +1417,10 @@ function removeAuthAccount(id) {
   try { saveRecoveryBackup(); } catch (e) { showToast("Удаление отменено: " + e.message, "error"); return false; }
   var remaining = loadAuthAccounts().filter(function (a) { return a.id !== id; });
   try { saveAuthAccounts(remaining); } catch (e) { showToast("Не удалось сохранить список аккаунтов: " + e.message, "error"); return false; }
+  // Remember the deletion so it propagates to other devices instead of the
+  // account resurrecting from their older Gist copies.
+  rememberAccountDeletion(account);
+  scheduleAccountSync("silent");
   if (isCurrent) {
     clearAuthSession(); state.devUnlocked = false;
     try { if (storage) storage.removeItem(SETTINGS_UNLOCK_KEY); } catch (e) {}
@@ -2781,7 +3031,7 @@ async function syncRun(reason, polling) {
   var remoteMatchesLocal = remote.notModified ? Boolean(syncRuntime.remoteApplied) : syncEqual(buildPayload(), remote.data);
   var hasWork = syncRuntime.hasPendingChanges || state.revision > state.lastSyncedRevision || queuedEntries().length > 0 || Object.keys(offline.conflicts).length > 0;
       if (remote.notModified && remoteMatchesLocal && !hasWork) {
-        syncRuntime.lastPullAt = Date.now(); syncSuccess(reason, state.revision, true); return;
+        syncRuntime.lastPullAt = Date.now(); syncSuccess(reason, state.revision, true); scheduleAccountSync(reason === "manual" ? "manual" : "auto"); return;
       }
       if(remote.notModified && Object.keys(offline.conflicts).length && syncRuntime.lastConflictRevision === state.revision){
         if(reason === "manual")showToast(syncConfig.lastError,"warning");return;
@@ -2819,6 +3069,10 @@ async function syncRun(reason, polling) {
       }
       syncRuntime.lastPullAt = Date.now();
       acknowledgeQueue(sentQueue); syncSuccess(reason, sentRevision); syncRuntime.remoteApplied = !requiresPush;
+      // Accounts ride along with every successful journal cycle: upload this
+      // device's list, merge all accounts.device.*.json files from the Gist
+      // and apply the result locally (see "Account sync" section).
+      scheduleAccountSync(reason === "manual" ? "manual" : "auto");
     });
   } catch (error) {
     if (config.generation === syncRuntime.generation) syncError(error, reason);
