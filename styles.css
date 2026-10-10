@@ -2724,6 +2724,38 @@ body[data-tech-admin] .role-banner{background:#dff1ea;border-color:#176c5c;color
 .auth-2fa-option input[type="radio"] { width: 18px; height: 18px; accent-color: var(--accent, #166b73); flex: 0 0 auto; }
 .auth-sms-row { display: flex; flex-direction: column; gap: 6px; }
 .auth-demo-hint { margin: 0; font-size: 12px; color: var(--muted); background: rgba(22, 107, 115, .07); border-radius: 8px; padding: 8px 10px; }
+/* Account sync window on the login screen (liquid-glass box, autumn palette) */
+.auth-sync-box {
+  border: 1px solid var(--border, #cfd8d3); border-radius: 14px; padding: 12px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, .55), rgba(233, 200, 148, .22));
+  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.auth-sync-hint { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.45; }
+.auth-sync-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.auth-sync-button { flex: 1 1 180px; min-height: 40px; font-size: 13px; }
+.auth-sync-status { margin: 0; font-size: 12px; line-height: 1.45; min-height: 16px; color: var(--muted); }
+.auth-sync-status.is-ok { color: #1d7a3f; }
+.auth-sync-status.is-error { color: #b3391f; }
+.auth-sync-status.is-warn { color: #9a6a12; }
+.auth-sync-status.is-busy { color: var(--muted); }
+@media (prefers-color-scheme: dark) {
+  .auth-sync-box { background: linear-gradient(160deg, rgba(58, 36, 18, .5), rgba(30, 20, 12, .55)); }
+  .auth-sync-status.is-ok { color: #6fce8e; }
+  .auth-sync-status.is-error { color: #f09074; }
+  .auth-sync-status.is-warn { color: #e6bd6a; }
+}
+[data-theme="dark"] .auth-sync-box { background: linear-gradient(160deg, rgba(58, 36, 18, .5), rgba(30, 20, 12, .55)); }
+[data-theme="dark"] .auth-sync-status.is-ok { color: #6fce8e; }
+[data-theme="dark"] .auth-sync-status.is-error { color: #f09074; }
+[data-theme="dark"] .auth-sync-status.is-warn { color: #e6bd6a; }
+@media screen and (max-width: 700px) {
+  .auth-sync-row { flex-direction: column; }
+  .auth-sync-button { flex: 1 1 auto; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .auth-sync-box { background: var(--surface, #fff); backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
 .auth-footnote { margin: 0; font-size: 11px; color: var(--muted); text-align: center; }
 @media screen and (max-width: 700px) {
   .auth-gate { padding: 12px; align-items: flex-start; }

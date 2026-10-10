@@ -175,6 +175,14 @@
       <div class="modal-actions"><button type="submit" id="authRegisterSubmit">Зарегистрироваться</button></div>
     </form>
     <form id="authLoginForm" class="auth-form" autocomplete="off" hidden>
+      <div class="auth-sync-box" id="authSyncBox">
+        <p class="auth-sync-hint" id="authSyncHint">Аккаунты синхронизированы между устройствами через облако. Если зарегистрировали аккаунт на другом устройстве — загрузите его сюда.</p>
+        <div class="auth-sync-row">
+          <button type="button" class="secondary auth-sync-button" id="authSyncPullButton">Загрузить аккаунты с другого устройства</button>
+          <button type="button" class="secondary auth-sync-button" id="authSyncCheckButton">Проверить подключение к облаку</button>
+        </div>
+        <p class="auth-sync-status" id="authSyncStatus" role="status"></p>
+      </div>
       <label for="authLoginName">Имя и фамилия<input id="authLoginName" type="text" maxlength="140" required placeholder="Иван Иванов" autocomplete="username"></label>
       <label for="authLoginPass">Пароль<input id="authLoginPass" type="password" maxlength="128" required placeholder="••••••" autocomplete="current-password"></label>
       <fieldset class="auth-2fa">

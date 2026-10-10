@@ -697,6 +697,97 @@ function wireAuthGate() {
   });
   [d.authRegFirst, d.authRegLast, d.authRegPass1, d.authRegPass2].forEach(function (el) { el.addEventListener("input", function () { d.authRegisterError.textContent = ""; }); });
   [d.authLoginName, d.authLoginPass, d.authPhone, d.authSmsCode, d.authSecretWord].forEach(function (el) { el.addEventListener("input", function () { d.authLoginError.textContent = ""; }); });
+  if (d.authSyncPullButton) d.authSyncPullButton.addEventListener("click", authGateSyncPull);
+  if (d.authSyncCheckButton) d.authSyncCheckButton.addEventListener("click", authGateSyncCheck);
+}
+
+/* Account sync window on the login screen. Lets a user who registered on one
+ * device pull the shared account registry from the cloud Gist before signing
+ * in here — without touching the journal itself. Only hashes/salts travel;
+ * passwords never leave the device where they were created. */
+var authGateSyncBusy = false;
+function authGateSyncSetStatus(text, kind) {
+  var el = dom.authSyncStatus;
+  if (!el) return;
+  el.textContent = text || "";
+  el.className = "auth-sync-status" + (kind ? " is-" + kind : "");
+}
+function authGateSyncCountLabel() {
+  var n = loadAuthAccounts().filter(function (a) { return !a.deleted; }).length;
+  return n ? "На этом устройстве известно аккаунтов: " + n + "." : "";
+}
+async function authGateFetchRemoteAccounts() {
+  // Lightweight read of just the account registry from the configured Gist.
+  // Reuses the same fetch path as full sync but applies nothing to the
+  // journal state, so it is safe to run while sitting on the login screen.
+  var config = syncOperationConfig();
+  var remote = await fetchFromGist(config, { unconditional: true });
+  if (!remote || !remote.hasFiles || !remote.data) throw new Error("В облаке пока нет журнала с этого класса устройств.");
+  var accounts = Array.isArray(remote.data.accounts) ? remote.data.accounts : [];
+  return accounts.filter(function (a) { return a && accountValidId(a.id); });
+}
+async function authGateSyncPull() {
+  var d = dom;
+  if (authGateSyncBusy) return;
+  if (!syncConfigured()) {
+    authGateSyncSetStatus("Облачная синхронизация не настроена. Откройте настройки на любом устройстве и укажите Gist.", "error");
+    return;
+  }
+  if (!syncOnline()) {
+    authGateSyncSetStatus("Нет подключения к сети — загрузите аккаунты позже.", "error");
+    return;
+  }
+  authGateSyncBusy = true;
+  if (d.authSyncPullButton) { d.authSyncPullButton.disabled = true; d.authSyncPullButton.textContent = "Загружаем…"; }
+  authGateSyncSetStatus("Связь с облаком…", "busy");
+  try {
+    var remoteAccounts = await authGateFetchRemoteAccounts();
+    var arrived = applySyncedAccounts(remoteAccounts);
+    var known = loadAuthAccounts().filter(function (a) { return !a.deleted; }).length;
+    if (arrived && known) {
+      authGateSyncSetStatus("Готово: список аккаунтов обновлён из облака (" + known + " шт.). Теперь войдите.", "ok");
+      if (d.authFootnote) d.authFootnote.textContent = "";
+    } else if (known) {
+      authGateSyncSetStatus("Облако проверено: новых аккаунтов нет. " + authGateSyncCountLabel(), "ok");
+    } else {
+      authGateSyncSetStatus("В облаке нет ни одного аккаунта. Зарегистрируйтесь — он появится на других устройствах после синхронизации.", "warn");
+    }
+  } catch (error) {
+    authGateSyncSetStatus("Не удалось загрузить аккаунты: " + (error && error.message ? error.message : "ошибка сети"), "error");
+  } finally {
+    authGateSyncBusy = false;
+    if (d.authSyncPullButton) { d.authSyncPullButton.disabled = false; d.authSyncPullButton.textContent = "Загрузить аккаунты с другого устройства"; }
+  }
+}
+async function authGateSyncCheck() {
+  var d = dom;
+  if (authGateSyncBusy) return;
+  if (!syncConfigured()) {
+    authGateSyncSetStatus("Облако не подключено: в настройках не указан Gist. Аккаунты видны только на этом устройстве.", "warn");
+    return;
+  }
+  if (!syncOnline()) {
+    authGateSyncSetStatus("Нет сети — проверка невозможна.", "error");
+    return;
+  }
+  authGateSyncBusy = true;
+  if (d.authSyncCheckButton) { d.authSyncCheckButton.disabled = true; d.authSyncCheckButton.textContent = "Проверяем…"; }
+  authGateSyncSetStatus("Связь с облаком…", "busy");
+  try {
+    var remoteAccounts = await authGateFetchRemoteAccounts();
+    var active = remoteAccounts.filter(function (a) { return !a.deleted; });
+    var msg = "Облако на связи. Аккаунтов в нём: " + active.length + ". " + authGateSyncCountLabel();
+    var freshOnCloud = active.filter(function (a) {
+      return !loadAuthAccounts().some(function (l) { return l.id === a.id; });
+    }).length;
+    if (freshOnCloud > 0) msg += " Ещё не загружены на это устройство: " + freshOnCloud + " — нажмите «Загрузить аккаунты».";
+    authGateSyncSetStatus(msg, "ok");
+  } catch (error) {
+    authGateSyncSetStatus("Облако недоступно: " + (error && error.message ? error.message : "ошибка сети"), "error");
+  } finally {
+    authGateSyncBusy = false;
+    if (d.authSyncCheckButton) { d.authSyncCheckButton.disabled = false; d.authSyncCheckButton.textContent = "Проверить подключение к облаку"; }
+  }
 }
 function switchAuthTab(tab) {
   var register = tab === "register";
@@ -1901,7 +1992,7 @@ function wireProjectEvents(){
 }
 
 ["hwPanel","hwDueDate","hwClassName","hwText","hwPinButton","hwClearButton","hwAddButton","hwHistory","syncDeviceList","refreshDeviceListButton","roleBanner"].forEach(function(id){dom[id]=document.getElementById(id);});
-["authGate","authTitle","authSubtitle","authTabRegister","authTabLogin","authRegisterForm","authLoginForm","authRegFirst","authRegLast","authRegPass1","authRegPass2","authRegisterError","authRegisterSubmit","authLoginName","authLoginPass","authPhone","authSmsRow","authSmsCode","authSmsHint","authSecretWord","authLoginError","authLoginSubmit","authFootnote"].forEach(function(id){dom[id]=document.getElementById(id);});
+["authGate","authTitle","authSubtitle","authTabRegister","authTabLogin","authRegisterForm","authLoginForm","authRegFirst","authRegLast","authRegPass1","authRegPass2","authRegisterError","authRegisterSubmit","authLoginName","authLoginPass","authPhone","authSmsRow","authSmsCode","authSmsHint","authSecretWord","authLoginError","authLoginSubmit","authFootnote","authSyncBox","authSyncHint","authSyncPullButton","authSyncCheckButton","authSyncStatus"].forEach(function(id){dom[id]=document.getElementById(id);});
 if (dom.authSmsRow === undefined || dom.authSmsRow === null) { var smsEl = document.querySelector(".auth-sms-row"); if (smsEl) dom.authSmsRow = smsEl; }
 
 /* Homework: unlimited entries pinned per class. Each entry is an item of the
