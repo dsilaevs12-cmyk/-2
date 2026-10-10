@@ -150,7 +150,14 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, Arial, sans-serif;
       font-size: var(--fs-base);
       color: var(--text);
-      background: var(--background);
+      /* Autumn wash: warm cream base + soft orange/amber radial glows so the
+         screen never looks plain white ("фон голый") on any device size. */
+      background-color: var(--background);
+      background-image:
+        radial-gradient(ellipse at 15% 0%, rgba(251, 146, 60, .18), transparent 55%),
+        radial-gradient(ellipse at 90% 10%, rgba(234, 88, 12, .12), transparent 50%),
+        radial-gradient(ellipse at 50% 100%, rgba(217, 119, 6, .10), transparent 60%);
+      background-attachment: fixed;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
       line-height: 1.5;
@@ -2694,8 +2701,10 @@ body[data-tech-admin] .role-banner{background:#dff1ea;border-color:#176c5c;color
 /* ---------- Authentication gate (register / login + 2FA) ---------- */
 .auth-gate {
   position: fixed; inset: 0; z-index: 1200; display: flex; align-items: center; justify-content: center;
-  padding: 20px; background: linear-gradient(135deg, rgba(10, 40, 45, .92), rgba(22, 107, 115, .88));
-  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); overflow-y: auto;
+  /* Autumn wash instead of the old teal overlay — semi-transparent so the
+     falling leaves behind it stay visible on phone, tablet AND desktop. */
+  padding: 20px; background: linear-gradient(160deg, rgba(120, 53, 15, .55) 0%, rgba(180, 83, 9, .45) 45%, rgba(249, 115, 22, .38) 100%);
+  backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); overflow-y: auto;
 }
 .auth-gate[hidden] { display: none; }
 .auth-card {
@@ -3175,6 +3184,14 @@ input:not([type]), select, textarea { border-radius: var(--radius-sm); }
   .autumn-leaves span:nth-child(4){left:55%; animation-duration:26s; animation-delay:-14s; font-size:24px}
   .autumn-leaves span:nth-child(5){left:71%; animation-duration:21s; animation-delay:-7s;  font-size:19px}
   .autumn-leaves span:nth-child(6){left:86%; animation-duration:28s; animation-delay:-3s;  font-size:27px}
+  /* Leaves 7-12 fall at negative delays so they are already spread across the
+     screen on first paint — no "empty top half" gap right after load. */
+  .autumn-leaves span:nth-child(7){left:12%; animation-duration:23s; animation-delay:-17s; font-size:20px}
+  .autumn-leaves span:nth-child(8){left:30%; animation-duration:20s; animation-delay:-12s; font-size:16px}
+  .autumn-leaves span:nth-child(9){left:48%; animation-duration:25s; animation-delay:-19s; font-size:22px}
+  .autumn-leaves span:nth-child(10){left:63%; animation-duration:18s; animation-delay:-8s;  font-size:17px}
+  .autumn-leaves span:nth-child(11){left:79%; animation-duration:27s; animation-delay:-15s; font-size:24px}
+  .autumn-leaves span:nth-child(12){left:93%; animation-duration:22s; animation-delay:-6s;  font-size:19px}
 }
 /* Tablets (701–1100px): wider viewport needs more leaves + bigger sizes */
 @media screen and (min-width:701px) and (max-width:1100px){
@@ -3187,6 +3204,14 @@ input:not([type]), select, textarea { border-radius: var(--radius-sm); }
   .autumn-leaves span:nth-child(6){left:67%;  animation-duration:30s; animation-delay:-3s;  font-size:34px}
   .autumn-leaves span:nth-child(7){left:79%;  animation-duration:20s; animation-delay:-11s; font-size:22px}
   .autumn-leaves span:nth-child(8){left:91%;  animation-duration:27s; animation-delay:-6s;  font-size:31px}
+  .autumn-leaves span:nth-child(9){left:9%;   animation-duration:24s; animation-delay:-18s; font-size:28px}
+  .autumn-leaves span:nth-child(10){left:22%; animation-duration:19s; animation-delay:-9s;  font-size:23px}
+  .autumn-leaves span:nth-child(11){left:36%; animation-duration:26s; animation-delay:-13s; font-size:33px}
+  .autumn-leaves span:nth-child(12){left:49%; animation-duration:22s; animation-delay:-4s;  font-size:25px}
+  .autumn-leaves span:nth-child(13){left:62%; animation-duration:29s; animation-delay:-16s; font-size:30px}
+  .autumn-leaves span:nth-child(14){left:74%; animation-duration:21s; animation-delay:-8s;  font-size:26px}
+  .autumn-leaves span:nth-child(15){left:86%; animation-duration:27s; animation-delay:-20s; font-size:32px}
+  .autumn-leaves span:nth-child(16){left:96%; animation-duration:23s; animation-delay:-12s; font-size:24px}
 }
 /* Desktop PCs (>=1101px): full-bleed canopy of leaves across the wide screen */
 @media screen and (min-width:1101px){
@@ -3201,6 +3226,14 @@ input:not([type]), select, textarea { border-radius: var(--radius-sm); }
   .autumn-leaves span:nth-child(8){left:75%;  animation-duration:29s; animation-delay:-6s;  font-size:35px}
   .autumn-leaves span:nth-child(9){left:85%;  animation-duration:26s; animation-delay:-16s; font-size:30px}
   .autumn-leaves span:nth-child(10){left:95%; animation-duration:35s; animation-delay:-8s;  font-size:40px}
+  .autumn-leaves span:nth-child(11){left:7%;  animation-duration:24s; animation-delay:-19s; font-size:27px}
+  .autumn-leaves span:nth-child(12){left:18%; animation-duration:30s; animation-delay:-12s; font-size:37px}
+  .autumn-leaves span:nth-child(13){left:29%; animation-duration:21s; animation-delay:-6s;  font-size:23px}
+  .autumn-leaves span:nth-child(14){left:39%; animation-duration:34s; animation-delay:-15s; font-size:39px}
+  .autumn-leaves span:nth-child(15){left:50%; animation-duration:27s; animation-delay:-9s;  font-size:31px}
+  .autumn-leaves span:nth-child(16){left:60%; animation-duration:32s; animation-delay:-21s; font-size:36px}
+  .autumn-leaves span:nth-child(17){left:70%; animation-duration:25s; animation-delay:-4s;  font-size:29px}
+  .autumn-leaves span:nth-child(18){left:90%; animation-duration:28s; animation-delay:-17s; font-size:33px}
 }
 /* Dark mode: slightly dimmer leaves + warm dark wash (all breakpoints) */
 @media screen and (prefers-color-scheme:dark){
