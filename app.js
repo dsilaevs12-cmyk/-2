@@ -160,9 +160,17 @@ function setCodeFails(n) { try { if (n <= 0) storage.removeItem(CODE_FAILS_KEY);
 function getAuthFails() { try { return Math.max(0, Number(storage && storage.getItem(AUTH_FAILS_KEY)) || 0); } catch (error) { return 0; } }
 function setAuthFails(n) { try { if (n <= 0) storage.removeItem(AUTH_FAILS_KEY); else storage.setItem(AUTH_FAILS_KEY, String(n)); } catch (error) {} }
 // Records a ban on this device only (settings-code lockout).
-function applyShadowBan(reason) {
+function applyShadowBan(reason, issuedBy, trigger) {
   try {
-    storage.setItem(SHADOW_BAN_KEY, JSON.stringify({ at: Date.now(), reason: String(reason || "").slice(0, 200) }));
+    // The record carries everything the lock screen must display: exact time
+    // of issuance, who issued it (technician login or "автоматически"), the
+    // machine-readable trigger and the human-readable reason.
+    storage.setItem(SHADOW_BAN_KEY, JSON.stringify({
+      at: Date.now(),
+      reason: String(reason || "").slice(0, 200),
+      by: String(issuedBy || "автоматически").slice(0, 80),
+      trigger: String(trigger || BAN_TRIGGER_AUTO_CODE).slice(0, 40)
+    }));
   } catch (error) { return false; }
   refreshSystemText(); renderMaintenance(); applyRoleRestrictions(); render();
   showToast("Устройство отправлено в теневой бан.", "warning");
@@ -182,6 +190,131 @@ function liftShadowBan() {
   refreshSystemText(); renderMaintenance(); applyRoleRestrictions(); render();
   renderShadowBanList();
   showToast("Теневой бан снят с этого устройства.", "success");
+}
+/* ---------- Shadow-ban lock screen (non-dismissible) ---------- */
+// While the device is shadow-banned a full-screen notice replaces the
+// maintenance overlay on THIS device only: journal data stays intact, but the
+// screen cannot be collapsed, closed with Escape or clicked away — like a
+// scheduled maintenance page. It lists the device identifier, the issuing
+// source (a technician through the settings panel or the automatic code
+// lockout), the reason, the public IP and the date/time the ban was handed
+// out, plus the synchronized system text from settings. When the network IP
+// is still unknown the screen asks for it in the background (api.ipify.org),
+// caches it and re-renders itself.
+// Machine-readable trigger codes stored inside the ban record so the lock
+// screen can explain exactly why the device is limited.
+var BAN_TRIGGER_AUTO_CODE = "code-fails";
+var BAN_TRIGGER_MANUAL_DEVICE = "manual-device";
+var BAN_TRIGGER_MANUAL_IP = "manual-ip";
+var BAN_TRIGGER_ACCOUNT = "account";
+var BAN_TRIGGER_LABELS = {
+  "code-fails": "Автоматически — " + SETTINGS_MAX_FAILED_CODE_ATTEMPTS + " неверных попыток ввода кода настроек",
+  "password-fails": "Автоматически — " + AUTH_MAX_FAILED_PASSWORD_ATTEMPTS + " неверных попыток ввода пароля",
+  "manual-device": "Вручную — тех. работник выдал бан устройству из панели настроек",
+  "manual-ip": "Вручную — тех. работник выдал бан по IP-адресу из панели настроек",
+  "account": "Вручную — тех. работник выдал бан аккаунту из панели настроек"
+};
+function banTriggerLabel(ban) {
+  if (ban && BAN_TRIGGER_LABELS[ban.trigger]) return BAN_TRIGGER_LABELS[ban.trigger];
+  return "Вручную — бан выдан из панели настроек";
+}
+// Who signed the ban: an account name means a technician issued it from the
+// settings panel; otherwise the lockout was automatic (code/password fails).
+function banIssuerLabel(ban) {
+  var by = ban && ban.by ? String(ban.by) : "";
+  return by && by !== "автоматически" ? "Тех. работник: " + by : "Автоматически (система защиты журнала)";
+}
+// Which of the three ban layers currently hits this device — used when there
+// is no local ban record (inherited account/IP ban).
+function shadowBanMatch() {
+  try {
+    var sess = currentAuthSession();
+    if (sess && sess.accountId) {
+      var accBan = loadAccountShadowBans()[sess.accountId];
+      if (accBan) return { kind: "account", entry: accBan };
+    }
+    var ip = getCachedPublicIp();
+    if (ip) {
+      var ipBan = loadDeviceShadowBans()["ip:" + ip];
+      if (ipBan) return { kind: "manual-ip", entry: ipBan };
+    }
+    if (deviceId) {
+      var devBan = loadDeviceShadowBans()[deviceId];
+      if (devBan) return { kind: "manual-device", entry: devBan };
+    }
+  } catch (error) {}
+  return null;
+}
+function shadowBanScreenActive() {
+  // Maintenance takes precedence when it covers this device; otherwise any
+  // shadow ban (device flag, inherited account ban or IP ban) locks the view.
+  return !shouldShowMaintenance() && isShadowBanned();
+}
+function renderShadowBanScreen() {
+  var el = dom.shadowBanScreen;
+  if (!el) return;
+  var open = shadowBanScreenActive();
+  el.classList.toggle("open", open);
+  if (!open) { updateInert(); return; }
+  // Prefer the local ban record (it carries reason/by/trigger written at the
+  // moment of issuance). For inherited bans (account or IP registry without a
+  // local record) reconstruct an equivalent view from the registry entry.
+  var ban = getShadowBan();
+  if (!ban) {
+    var match = shadowBanMatch();
+    if (match) {
+      ban = { at: match.entry.at || 0, reason: match.entry.label || "", by: "тех. работник", trigger: match.kind };
+    }
+  }
+  var ip = getCachedPublicIp();
+  var issuedAt = ban && Number(ban.at) > 0 ? formatTime(Number(ban.at)) : "дата не указана";
+  var reason = ban && ban.reason ? String(ban.reason) : "Нарушение правил доступа к настройкам журнала.";
+  var sess = null;
+  try { sess = currentAuthSession(); } catch (error) {}
+  var rows = [
+    ["Устройство", deviceId || "не определено"],
+    ["Аккаунт", sess && sess.fullName ? sess.fullName : "вход не выполнен"],
+    ["Кем выдан", banIssuerLabel(ban)],
+    ["Основание", banTriggerLabel(ban)],
+    ["Причина бана", reason],
+    ["IP-адрес устройства", ip || "определяется…"],
+    ["Дата и время выдачи", issuedAt]
+  ];
+  var list = document.getElementById("shadowBanScreenInfo");
+  if (list) {
+    list.innerHTML = "";
+    rows.forEach(function (row) {
+      var item = document.createElement("div");
+      item.className = "shadow-ban-info-row";
+      var dt = document.createElement("span");
+      dt.className = "shadow-ban-info-label";
+      dt.textContent = row[0];
+      var dd = document.createElement("span");
+      dd.className = "shadow-ban-info-value";
+      dd.textContent = row[1];
+      item.appendChild(dt); item.appendChild(dd);
+      list.appendChild(item);
+    });
+  }
+  var textEl = document.getElementById("shadowBanScreenSystemText");
+  if (textEl) {
+    // The editable gray system text is mirrored on the lock screen too, so a
+    // technician can leave instructions visible even on a banned device.
+    var lines = systemTextLines();
+    textEl.textContent = "";
+    lines.forEach(function (line, i) {
+      if (i) textEl.appendChild(document.createTextNode("\n"));
+      textEl.appendChild(document.createTextNode(line));
+    });
+    textEl.hidden = lines.length === 0;
+  }
+  updateInert();
+  if (!el.dataset.ipRequested && !ip) {
+    el.dataset.ipRequested = "1";
+    fetchPublicIp(false).then(function () {
+      if (shadowBanScreenActive()) renderShadowBanScreen();
+    }).catch(function () {});
+  }
 }
 // Global registry of shadow-banned accounts (visible in settings).
 function loadAccountShadowBans() {
@@ -236,8 +369,16 @@ function fetchPublicIp(force) {
 function enforceIpBanOnLogin() {
   var ip = getCachedPublicIp();
   if (ip && loadDeviceShadowBans()["ip:" + ip] && !getShadowBan()) {
-    applyShadowBan("Бан по IP-адресу " + ip);
+    applyShadowBan("Бан по IP-адресу " + ip, settingsActorName(), BAN_TRIGGER_MANUAL_IP);
   }
+}
+// Display name of the technician currently holding the settings panel — used
+// to stamp manual bans so the lock screen can show WHO issued them.
+function settingsActorName() {
+  try {
+    var sess = currentAuthSession();
+    return sess && sess.fullName ? String(sess.fullName) : "тех. работник";
+  } catch (error) { return "тех. работник"; }
 }
 function renderShadowBanList() {
   var wrap = document.getElementById("shadowBanList");
@@ -299,7 +440,7 @@ function banByIp(rawIp) {
 }
 function banThisDevice() {
   setDeviceShadowBan(deviceId || ("device:" + Date.now()), true, "Ручной бан устройства");
-  applyShadowBan("Бан выдан вручную из настроек");
+  applyShadowBan("Бан выдан вручную из настроек", settingsActorName(), BAN_TRIGGER_MANUAL_DEVICE);
   renderShadowBanList();
   showToast("Это устройство отправлено в теневой бан.", "success");
 }
@@ -421,7 +562,7 @@ var syncConfig = { enabled: false, token: "", gistId: "", isPublicGist: false, l
 var deviceId = "", logicalTime = 0, activeModal = null, previousFocus = null, modalStack = [];
 var attendanceModalState = { open: false, studentId: "", dateKey: "", currentStatus: STATUS_UNMARKED };
 var dom = {};
-["userList", "refreshUserListButton", "studentName", "addStudentButton", "monthPicker", "previousMonthButton", "nextMonthButton", "todayButton", "monthTitle", "tableHead", "tableBody", "emptyMessage", "searchInput", "clearSearchButton", "searchResultsInfo", "noSearchResults", "toast", "syncStatus", "syncStatusText", "toggleSyncConfigButton", "syncConfig", "githubToken", "gistId", "gistPublicCheckbox", "publicGistWarning", "saveSyncConfigButton", "testConnectionButton", "disableSyncButton", "syncNowButton", "forcePushButton", "forcePullButton", "debugButton", "refreshDebugButton", "copyDebugButton", "debugBlock", "debugPre", "intervalSelect", "newsBanner", "newsText", "newsCloseButton", "versionButton", "versionButtonText", "journalEdition", "devPanelModal", "devCloseButton", "devExitButton", "devVersionTextInput", "devSaveVersionTextButton", "devResetVersionTextButton", "devToggleMaintenanceButton", "devMaintenanceMessageInput", "devSaveMaintenanceMessageButton", "devResetMaintenanceMessageButton", "devNewsInput", "devSaveNewsButton", "devClearNewsButton", "devClearAllButton", "maintenanceOverlay", "maintenanceMessageText", "maintenanceActiveBadge", "maintenanceDevAccessButton", "attendanceModal", "attCloseButton", "attStudentName", "attDateText", "attOptions", "localSaveStatus", "exportBackupButton", "importBackupButton", "importBackupInput", "restoreBackupButton", "printButton", "summaryStudents", "summaryPresent", "summaryAbsent", "summaryLate", "coverageInfo", "journalApp", "printMonthTitle", "systemTextLine", "devSystemTextInput", "devSaveSystemTextButton", "devResetSystemTextButton"].forEach(function (id) { dom[id] = document.getElementById(id); });
+["userList", "refreshUserListButton", "studentName", "addStudentButton", "monthPicker", "previousMonthButton", "nextMonthButton", "todayButton", "monthTitle", "tableHead", "tableBody", "emptyMessage", "searchInput", "clearSearchButton", "searchResultsInfo", "noSearchResults", "toast", "syncStatus", "syncStatusText", "toggleSyncConfigButton", "syncConfig", "githubToken", "gistId", "gistPublicCheckbox", "publicGistWarning", "saveSyncConfigButton", "testConnectionButton", "disableSyncButton", "syncNowButton", "forcePushButton", "forcePullButton", "debugButton", "refreshDebugButton", "copyDebugButton", "debugBlock", "debugPre", "intervalSelect", "newsBanner", "newsText", "newsCloseButton", "versionButton", "versionButtonText", "journalEdition", "devPanelModal", "devCloseButton", "devExitButton", "devVersionTextInput", "devSaveVersionTextButton", "devResetVersionTextButton", "devToggleMaintenanceButton", "devMaintenanceMessageInput", "devSaveMaintenanceMessageButton", "devResetMaintenanceMessageButton", "devNewsInput", "devSaveNewsButton", "devClearNewsButton", "devClearAllButton", "maintenanceOverlay", "maintenanceMessageText", "maintenanceActiveBadge", "maintenanceDevAccessButton", "attendanceModal", "attCloseButton", "attStudentName", "attDateText", "attOptions", "localSaveStatus", "exportBackupButton", "importBackupButton", "importBackupInput", "restoreBackupButton", "printButton", "summaryStudents", "summaryPresent", "summaryAbsent", "summaryLate", "coverageInfo", "journalApp", "printMonthTitle", "systemTextLine", "devSystemTextInput", "devSaveSystemTextButton", "devResetSystemTextButton", "shadowBanScreen"].forEach(function (id) { dom[id] = document.getElementById(id); });
 dom.studentNameInput = dom.studentName;
 var storage = accessibleStorage("localStorage"), sessStorage = accessibleStorage("sessionStorage");
 /* ---------- Educational institutions (учебные учреждения) ---------- */
@@ -1544,6 +1685,9 @@ async function handleAuthLogin(event) {
         if (pwFails >= AUTH_MAX_FAILED_PASSWORD_ATTEMPTS) {
           setAccountShadowBan(account.id, true, account.fullName);
           setAuthFails(0);
+          // The device itself drops into the ban too, so the non-dismissible
+          // lock screen appears immediately after the 5th wrong password.
+          applyShadowBan(AUTH_MAX_FAILED_PASSWORD_ATTEMPTS + " неверных попытки ввода пароля аккаунта «" + account.fullName + "»", "автоматически", "password-fails");
           d.authLoginError.textContent = "Слишком много неверных попыток: аккаунт отправлен в теневой бан.";
           d.authLoginPass.value = "";
           showToast("Аккаунт «" + account.fullName + "» в теневом бане.", "warning");
@@ -1708,7 +1852,7 @@ function removeStudent(id) {
   markChanged(["students/"+id]); scheduleSaveLocal(); render(); scheduleSync(); showToast("Ученик удалён. Доступно восстановление из копии.", "success");
 }
 function modalFocusables() { return activeModal ? Array.from(activeModal.querySelectorAll("button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [href], [tabindex='0']")).filter(function (el) { return el.getClientRects().length; }) : []; }
-function updateInert() { if (dom.journalApp) dom.journalApp.inert = !!activeModal || shouldShowMaintenance(); if (dom.maintenanceOverlay) dom.maintenanceOverlay.inert = !!activeModal; }
+function updateInert() { var banLock = shadowBanScreenActive(); if (dom.journalApp) dom.journalApp.inert = !!activeModal || shouldShowMaintenance() || banLock; if (dom.maintenanceOverlay) dom.maintenanceOverlay.inert = !!activeModal; }
 function openModal(modal, focus) {
   if (activeModal === modal) return;
   if (activeModal) { modalStack.push({ modal: activeModal, previousFocus: previousFocus }); activeModal.classList.remove("open"); }
@@ -1839,7 +1983,7 @@ function renderSummary(days) {
   dom.coverageInfo.textContent = "За " + period + ": " + (count.present + count.absent + count.late) + " отметок. Пустые дни не считаются присутствием.";
 }
 function shouldShowMaintenance() { return state.settings.maintenance && state.settings.maintenanceBy !== deviceId && !state.devUnlocked; }
-function renderMaintenance() { var open = shouldShowMaintenance(), wasOpen = dom.maintenanceOverlay.classList.contains("open"); dom.maintenanceOverlay.classList.toggle("open", open); dom.maintenanceMessageText.textContent = state.settings.maintenanceMessage; dom.maintenanceActiveBadge.style.display = state.settings.maintenance ? "inline-flex" : "none"; updateInert(); if (open && !wasOpen && !activeModal) dom.maintenanceDevAccessButton.focus(); }
+function renderMaintenance() { var open = shouldShowMaintenance(), wasOpen = dom.maintenanceOverlay.classList.contains("open"); dom.maintenanceOverlay.classList.toggle("open", open); dom.maintenanceMessageText.textContent = state.settings.maintenanceMessage; dom.maintenanceActiveBadge.style.display = state.settings.maintenance ? "inline-flex" : "none"; renderShadowBanScreen(); updateInert(); if (open && !wasOpen && !activeModal) dom.maintenanceDevAccessButton.focus(); }
 function renderNews() {
   var news = state.settings.news.trim(), dismissed = null; try { dismissed = storage && storage.getItem(NEWS_DISMISS_KEY); } catch (e) {}
   dom.newsText.textContent = news; dom.newsBanner.classList.toggle("visible", !!news && news !== dismissed);
@@ -2400,7 +2544,7 @@ function submitSettingsCode(event) {
     setCodeFails(fails);
     dom.settingsPasswordInput.value = ""; dom.settingsPasswordInput.setAttribute("aria-invalid", "true");
     if (fails >= SETTINGS_MAX_FAILED_CODE_ATTEMPTS) {
-      applyShadowBan("5 неверных попыток ввода кода настроек");
+      applyShadowBan(SETTINGS_MAX_FAILED_CODE_ATTEMPTS + " неверных попыток ввода кода настроек", "автоматически", BAN_TRIGGER_AUTO_CODE);
       closePasswordModal();
       return;
     }
