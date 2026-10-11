@@ -184,11 +184,11 @@ function applyShadowBan(reason, techBy) {
 }
 /* ---------- Technical text of the ban screen ---------- */
 function getBanTechText() {
-  try { var v = storage && storage.getItem(BAN_TECH_TEXT_KEY); return typeof v === "string" && v.trim() ? v.trim().slice(0, 1000) : DEFAULT_BAN_TECH_TEXT; }
+  try { var v = storage && storage.getItem(BAN_TECH_TEXT_KEY); return typeof v === "string" && v.trim() ? v.trim() : DEFAULT_BAN_TECH_TEXT; }
   catch (error) { return DEFAULT_BAN_TECH_TEXT; }
 }
 function setBanTechText(value) {
-  var clean = String(value == null ? "" : value).trim().slice(0, 1000);
+  var clean = String(value == null ? "" : value).trim(); // no length limit
   try { if (clean) storage.setItem(BAN_TECH_TEXT_KEY, clean); else storage.removeItem(BAN_TECH_TEXT_KEY); } catch (error) {}
   // A freshly typed text lands on the ban screen right away when the local
   // ban carries no explicit technical text yet.
@@ -473,8 +473,8 @@ function normalizeSystemText(raw) {
     .split("\n").map(function (l) { return l.replace(/[ \t]+/g, " ").trim(); })
     .join("\n")
     .replace(/\n{3,}/g, "\n\n") // collapse excessive blank lines
-    .replace(/^\n+|\n+$/g, "")
-    .slice(0, 600);
+    .replace(/^\n+|\n+$/g, "");
+  // No length limit: the system text can be edited as long as needed.
 }
 function systemTextLines() {
   var t = normalizeSystemText(state.settings.systemText);
@@ -2224,7 +2224,7 @@ function refreshDevPanel() {
   if (dom.devSaveBanTechTextButton && !dom.devSaveBanTechTextButton.dataset.wired) {
     dom.devSaveBanTechTextButton.dataset.wired = "1";
     dom.devSaveBanTechTextButton.addEventListener("click", function () {
-      var text = String(dom.devBanTechTextInput ? dom.devBanTechTextInput.value : "").trim().slice(0, 1000);
+      var text = String(dom.devBanTechTextInput ? dom.devBanTechTextInput.value : "").trim();
       if (!text) return showToast("Введите технический текст", "warning");
       setBanTechText(text);
       if (dom.devBanTechTextInput) dom.devBanTechTextInput.value = text;

@@ -4,7 +4,7 @@ import json, sys
 from playwright.sync_api import sync_playwright
 
 URL = "file:///workspace/index.html"
-EXE = "/root/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome"
+EXE = "/root/.cache/ms-playwright/chromium-1117/chrome-linux/chrome"
 errors = []
 fails = []
 
@@ -115,7 +115,7 @@ with sync_playwright() as p:
     ip_txt = page.inner_text("#banDeviceIp")
     check("IP shown on ban screen", "203.0.113.7" in ip_txt, ip_txt)
     reason = page.inner_text("#banReason")
-    check("IP ban reason shown", "бан по IP" in reason.lower(), reason)
+    check("IP ban reason shown", "бан по ip-адресу" in reason.lower(), reason)
     by = page.inner_text("#banBy")
     check("IP ban issuer = tech worker", "тех." in by, by)
     date = page.inner_text("#banDate")
