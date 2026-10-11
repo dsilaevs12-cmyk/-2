@@ -169,6 +169,19 @@
 
 <div id="maintenanceOverlay" class="maintenance-overlay" role="dialog" aria-modal="true" aria-labelledby="maintenanceTitle"><div class="maintenance-content"><div class="maintenance-icon" aria-hidden="true">◷</div><h2 id="maintenanceTitle">Журнал на обслуживании</h2><p id="maintenanceMessageText"></p><button id="maintenanceDevAccessButton" class="secondary" type="button">Открыть настройки</button></div></div>
 
+<div id="shadowBanScreen" class="shadow-ban-screen" role="alertdialog" aria-modal="true" aria-labelledby="shadowBanScreenTitle">
+  <div class="shadow-ban-card">
+    <div class="shadow-ban-icon" aria-hidden="true">⛔</div>
+    <h2 id="shadowBanScreenTitle">Устройство ограничено</h2>
+    <p class="shadow-ban-lead">Этот экран нельзя свернуть или закрыть — журнал переведён в режим теневого бана, как при техническом обслуживании. Данные журнала сохранены, но все изменения заблокированы. Бан снимается только через панель настроек после ввода кода.</p>
+    <div id="shadowBanScreenInfo" class="shadow-ban-info"></div>
+    <div class="shadow-ban-system-text-block">
+      <span class="shadow-ban-system-text-label">Системный текст</span>
+      <p id="shadowBanScreenSystemText" class="shadow-ban-system-text"></p>
+    </div>
+  </div>
+</div>
+
 <div id="authGate" class="auth-gate" role="dialog" aria-modal="true" aria-labelledby="authTitle" hidden>
   <div class="auth-card">
     <p class="eyebrow">Учебный журнал</p>

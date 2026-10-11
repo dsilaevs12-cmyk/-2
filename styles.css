@@ -3685,3 +3685,33 @@ html[data-theme="light"] .system-text-line{color:#8a8f98}
 .shadow-ban-flag{background:#4b5563!important;color:#fff!important;border-radius:999px;padding:2px 8px;margin-left:8px;font-size:11px;font-weight:600}
 #shadowBanCurrentIp{align-self:center}
 .row-actions input[type="text"]{flex:1;min-width:160px}
+
+/* ---------- Non-dismissible shadow-ban lock screen ---------- */
+/* Full-screen notice shown on a shadow-banned device, styled like the
+   scheduled-maintenance page. It has no close button at all and sits above
+   every other layer (modals included), so it cannot be collapsed or clicked
+   away; the only way out is lifting the ban from the settings panel. */
+.shadow-ban-screen{position:fixed;inset:0;z-index:9500;display:none;align-items:center;justify-content:center;padding:24px;background:linear-gradient(135deg,#2b0d0d 0%,#4c1d1d 45%,#120606 100%);overflow:auto}
+.shadow-ban-screen.open{display:flex}
+html[data-theme="dark"] .shadow-ban-screen{background:linear-gradient(135deg,#2b0d0d 0%,#4c1d1d 45%,#120606 100%)}
+.shadow-ban-card{max-width:640px;width:100%;background:var(--card,#fff);color:var(--text,#1f2937);border:1px solid var(--border,#e5e7eb);border-radius:24px;padding:28px 30px;box-shadow:0 30px 90px rgba(0,0,0,.45);animation:shadowBanIn .5s ease-out;text-align:left}
+@keyframes shadowBanIn{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:none}}
+.shadow-ban-icon{width:64px;height:64px;margin:0 auto 14px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:30px;color:#fff;background:linear-gradient(135deg,#b91c1c,#7f1d1d);box-shadow:0 10px 26px rgba(185,28,28,.35)}
+.shadow-ban-card h2{text-align:center;margin:0 0 8px;font-size:24px;color:#b91c1c}
+html[data-theme="dark"] .shadow-ban-card h2{color:#f87171}
+.shadow-ban-lead{margin:0 0 18px;text-align:center;color:var(--muted,#6b7280);font-size:14px;line-height:1.5}
+.shadow-ban-info{display:grid;gap:8px;margin-bottom:18px}
+.shadow-ban-info-row{display:flex;flex-wrap:wrap;gap:6px 12px;justify-content:space-between;align-items:baseline;padding:10px 14px;border:1px solid var(--border,#e5e7eb);border-radius:14px;background:var(--background,#fafafa)}
+.shadow-ban-info-label{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted,#6b7280);user-select:none}
+.shadow-ban-info-value{font-size:14px;font-weight:600;color:var(--text-strong,#111827);text-align:right;flex:1;min-width:0;overflow-wrap:anywhere}
+.shadow-ban-system-text-block{padding:12px 14px;border-radius:14px;background:var(--background,#fafafa);border:1px dashed var(--border,#d1d5db)}
+.shadow-ban-system-text-label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted,#6b7280);margin-bottom:4px;user-select:none}
+.shadow-ban-system-text{margin:0;font-size:13px;line-height:1.45;color:#8a8f98;white-space:pre-wrap;overflow-wrap:anywhere;user-select:none}
+html[data-theme="dark"] .shadow-ban-system-text{color:#7d838c}
+.shadow-ban-system-text[hidden]{display:none}
+@media (max-width:560px){.shadow-ban-card{padding:20px 16px}.shadow-ban-info-value{text-align:left}}
+/* Ban screen covers everything — pause background leaf animations for it too,
+   keeping weak tablets responsive while the notice is open. */
+.shadow-ban-screen.open ~ .autumn-leaves span{animation-play-state:paused}
+body:has(.shadow-ban-screen.open) .autumn-leaves span{animation-play-state:paused}
+@media print{.shadow-ban-screen{display:none!important}}

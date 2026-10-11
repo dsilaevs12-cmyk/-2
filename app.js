@@ -2394,6 +2394,9 @@ function wireCoreEvents() {
   dom.debugButton.addEventListener("click", function () { dom.debugBlock.classList.toggle("open"); renderDebug(); }); dom.refreshDebugButton.addEventListener("click", renderDebug);
   dom.copyDebugButton.addEventListener("click", async function () { try { await navigator.clipboard.writeText(dom.debugPre.textContent); showToast("Диагностика скопирована", "success"); } catch (e) { showToast("Не удалось скопировать. Выделите текст вручную.", "warning"); } });
   document.addEventListener("keydown", function (e) {
+    // While the shadow-ban lock screen covers the device, no key may reach
+    // anything else — same behaviour as a scheduled maintenance page.
+    if (shadowBanScreenActive()) { e.preventDefault(); e.stopPropagation(); return; }
     if (activeModal && e.key === "Tab") { var items = modalFocusables(), first = items[0], last = items[items.length - 1]; if (!items.length) return e.preventDefault(); if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); } else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); } }
     if (e.key === "Escape" && activeModal) { e.preventDefault(); if (attendanceModalState.open) closeAttendanceModal(); else if (activeModal === dom.settingsPasswordModal) closePasswordModal(); else if (activeModal === dom.studentCardModal) closeStudentCard(); else if (activeModal === dom.devPanelModal) collapseDevPanel(); else closeModal(); }
     if (attendanceModalState.open && !e.ctrlKey && !e.metaKey && !e.altKey) { var statuses = { "1": STATUS_PRESENT, "2": STATUS_ABSENT, "3": STATUS_LATE, "0": STATUS_UNMARKED }; if (statuses[e.key]) { e.preventDefault(); setAttendanceStatus(statuses[e.key]); } }
@@ -4135,3 +4138,15 @@ function runFullClear(){
     showToast("Журнал очищен: удалены все ученики, отметки, домашние задания и занятия. Восстановить: «Восстановить последнюю»","success");
   }catch(e){console.error(e);showToast("Очистка не выполнена: "+e.message,"error");}
 }
+
+/* ---------- Test/debug hooks (used by automated jsdom smoke tests) ---------- */
+try {
+  window.__banTest = {
+    state: state, updateSettings: updateSettings, isShadowBanned: isShadowBanned,
+    getShadowBan: getShadowBan, applyShadowBan: applyShadowBan, liftShadowBan: liftShadowBan,
+    setDeviceShadowBan: setDeviceShadowBan, setAccountShadowBan: setAccountShadowBan,
+    enforceIpBanOnLogin: enforceIpBanOnLogin, renderMaintenance: renderMaintenance,
+    shadowBanScreenActive: shadowBanScreenActive, submitSettingsCode: submitSettingsCode,
+    getCachedPublicIp: getCachedPublicIp
+  };
+} catch (error) {}
