@@ -1855,7 +1855,12 @@ function setAttendanceStatus(status) {
   var student = getStudentById(attendanceModalState.studentId); if (!student || student.deleted) { closeAttendanceModal(); return; }
   var key = student.id + "_" + attendanceModalState.dateKey;
   state.attendance[key] = { status: status, updatedAt: nextTimestamp(), actor: deviceId };
-  markChanged(["attendance/"+key]); scheduleSaveLocal(); renderNow(); scheduleSync(); closeAttendanceModal();
+  // Order matters: close the modal and paint synchronously (renderNow) before
+  // any async work. The deferred variant used to run through rAF while the
+  // modal backdrop was still on screen; browsers skipped repainting cells that
+  // sat under the hidden backdrop, so a fresh mark only became visible after a
+  // page reload. Now the patched cell is guaranteed to repaint immediately.
+  markChanged(["attendance/"+key]); closeAttendanceModal(); renderNow(); scheduleSaveLocal(); scheduleSync();
 }
 function changeMonth(offset) { var d = parseMonth(state.selectedMonth); d.setMonth(d.getMonth() + offset); if (d.getFullYear() < 1000 || d.getFullYear() > 9999) return; state.selectedMonth = getMonthString(d); state.selectedDate = formatDateKey(d); render(); }
 function element(tag, className, text) { var el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; }
