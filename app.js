@@ -4074,7 +4074,7 @@ syncListen(dom.syncQuickButton,"click",function(){
 window.addEventListener("focus",function(){if((syncAutomatic()||syncReadOnly())&&Date.now()-syncRuntime.lastPullAt>2000)pollOnce();});
 
 /* Relative URLs work both on user.github.io and user.github.io/repository/. */
-var APP_VERSION = '3.3.0', APP_BUILD_ID = '9452c43ae2da225b';
+var APP_VERSION = '3.3.2', APP_BUILD_ID = 'b9e41d7ac05f2381'; // 3.3.2: darker background for the ban screen (overlay, card, info rows)
 var appUpdateRuntime = { checkedAt: 0, busy: false, available: '' };
 async function checkAppUpdate(){
   if(!/^https?:$/.test(window.location.protocol)||!syncOnline()||document.hidden||appUpdateRuntime.busy||Date.now()-appUpdateRuntime.checkedAt<300000)return;
