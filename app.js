@@ -1871,16 +1871,19 @@ function setAttendanceStatus(status) {
 // on all open devices.
 function scheduleEchoPolls() {
   if (!syncConfigured()) return;
-  clearEchoPolls();
+  // Do NOT clear previously scheduled echo timers here. Every local mutation
+  // (attendance mark, grade, student edit) calls scheduleSync -> this function;
+  // clearing on each call meant that during rapid marking only the LAST edit
+  // ever received echo pulls, so earlier marks sat on the other device until
+  // the regular poll (up to 5 minutes) or a manual page reload. Instead we
+  // cap the queue size and let every mutation keep its own pull schedule.
+  if ((syncRuntime.echoTimers || []).length > 24) clearEchoPolls();
   var generation = syncRuntime.generation;
-  // Deliberately spaced far AFTER the push: api.github.com serves gist file
-  // content through a CDN that may answer with a stale snapshot for up to a
-  // minute after another device's PATCH. Pulls fired at 1-8 s routinely read
-  // the pre-mark revision and applied nothing — which is exactly the
-  // "отметки появляются только после перезагрузки страницы" symptom (a reload
-  // happens minutes later, when the CDN cache has expired). The first pull at
-  // ~75 s lands outside that grace window; later pulls cover slow writers.
-  [75000, 160000, 310000].forEach(function (delay) {
+  // Fast burst right after the change: fetchFromGist({noCache:true}) sends a
+  // fresh ETag ("") which forces api.github.com to bypass its CDN snapshot,
+  // so pulls at 1.5/4/9 s now actually see the other device's mark. The late
+  // pulls cover devices whose push was still in flight during the burst.
+  [1500, 4000, 9000, 75000, 160000, 310000].forEach(function (delay) {
     var timer = setTimeout(function () {
       syncRuntime.echoTimers = syncRuntime.echoTimers.filter(function (t) { return t !== timer; });
       if (generation !== syncRuntime.generation) return;
@@ -3851,7 +3854,12 @@ async function syncRun(reason, polling) {
   // local mutation must bypass the automatic-mode gate (interval "off") and
   // the shared cachedRemote, otherwise the mark just made on another device
   // is served from cache and never appears without a page reload.
-  var echoPull = reason === "echo";
+  // The same applies to the visibility/focus/online refreshes: they are
+  // explicit user-driven refresh requests and must run even when the
+  // automatic interval is set to "off" — previously these calls were silently
+  // dropped by the syncAutomatic() gate below, which broke the fast update
+  // path after returning to the tab ("данные не обновляются").
+  var echoPull = reason === "echo" || reason === "visibility" || reason === "focus" || reason === "online";
   if (!echoPull && reason !== "manual" && !syncAutomatic()) return;
   if (syncRuntime.isSyncing) { if (!polling) syncRuntime.pendingSync = true; return; }
   if (syncRuntime.retryAt > Date.now()) { if (reason === "manual") showToast(syncConfig.lastError, "warning"); return; }
@@ -4118,8 +4126,8 @@ syncListen(dom.intervalSelect, "change", function (event) {
   if (interval > 0) scheduleSync();
   showToast(interval === 0 ? "Только вручную: автоматические запросы отключены" : "Автосинхронизация включена", "success");
 });
-document.addEventListener("visibilitychange", function () { if (!document.hidden && (syncAutomatic() || syncReadOnly())) pollOnce(); });
-window.addEventListener("online", function () { updateSyncUI(); if (syncAutomatic() || syncReadOnly()) fullSync("auto"); });
+document.addEventListener("visibilitychange", function () { if (!document.hidden && (syncAutomatic() || syncReadOnly())) fullSync("visibility"); });
+window.addEventListener("online", function () { updateSyncUI(); if (syncAutomatic() || syncReadOnly()) fullSync("online"); });
 window.addEventListener("offline", updateSyncUI);
 // Cross-tab realtime: when another tab on the SAME device writes the journal,
 // a "storage" event fires in every other tab. Without this, two tabs only saw
@@ -4179,10 +4187,10 @@ syncListen(dom.syncQuickButton,"click",function(){
   if(syncConfigured()&&!syncWritable()){try{fullSync("manual");}catch(error){}}
   dom.syncConfig.scrollIntoView({behavior:"smooth",block:"center"});dom.githubToken.focus({preventScroll:true});
 });
-window.addEventListener("focus",function(){if((syncAutomatic()||syncReadOnly())&&Date.now()-syncRuntime.lastPullAt>2000)pollOnce();});
+window.addEventListener("focus",function(){if((syncAutomatic()||syncReadOnly())&&Date.now()-syncRuntime.lastPullAt>2000)fullSync("focus");});
 
 /* Relative URLs work both on user.github.io and user.github.io/repository/. */
-var APP_VERSION = '3.3.4', APP_BUILD_ID = 'f91b6d3ac08e5742'; // 3.3.4: instant push after idle + echo pulls past the GitHub CDN stale-cache window (marks sync without page reload)
+var APP_VERSION = '3.3.5', APP_BUILD_ID = 'c2e8a17d4b90f653'; // 3.3.5: restore fast sync — echo burst pulls at 1.5/4/9 s (noCache bypasses the CDN), visibility/focus/online refreshes no longer dropped when auto-interval is "off", echo timers survive rapid successive marks
 var appUpdateRuntime = { checkedAt: 0, busy: false, available: '' };
 async function checkAppUpdate(){
   if(!/^https?:$/.test(window.location.protocol)||!syncOnline()||document.hidden||appUpdateRuntime.busy||Date.now()-appUpdateRuntime.checkedAt<300000)return;
