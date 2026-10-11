@@ -280,6 +280,90 @@ function wireShadowBanList() {
     showToast(id.indexOf("ip:") === 0 ? "Бан по IP-адресу снят." : "Бан устройства снят.", "success");
   });
 }
+// Manual BAN ISSUING also lives only inside the settings panel: an admin can
+// ban any listed account/device by IP. The address is validated as IPv4.
+var IPV4_RE = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+function isValidIpv4(value) {
+  var m = IPV4_RE.exec(String(value || "").trim());
+  if (!m) return false;
+  for (var i = 1; i <= 4; i++) { if (Number(m[i]) > 255) return false; }
+  return true;
+}
+function banByIp(rawIp) {
+  var ip = String(rawIp || "").trim();
+  if (!isValidIpv4(ip)) { showToast("Введите корректный IPv4-адрес, например 203.0.113.25", "warning"); return false; }
+  setDeviceShadowBan("ip:" + ip, true, "Ручной бан по IP");
+  renderShadowBanList(); updateShadowBanIpLabel();
+  showToast("IP-адрес " + ip + " отправлен в теневой бан.", "success");
+  return true;
+}
+function banThisDevice() {
+  setDeviceShadowBan(deviceId || ("device:" + Date.now()), true, "Ручной бан устройства");
+  applyShadowBan("Бан выдан вручную из настроек");
+  renderShadowBanList();
+  showToast("Это устройство отправлено в теневой бан.", "success");
+}
+function updateShadowBanIpLabel() {
+  var el = document.getElementById("shadowBanCurrentIp");
+  if (!el) return;
+  var ip = getCachedPublicIp();
+  el.textContent = ip ? "Публичный IP этого устройства: " + ip : "Публичный IP не определён — нажмите «Обновить IP».";
+}
+function wireShadowBanControls() {
+  var refreshBtn = document.getElementById("shadowBanRefreshIpButton");
+  if (refreshBtn && !refreshBtn.dataset.wired) {
+    refreshBtn.dataset.wired = "1";
+    refreshBtn.addEventListener("click", function () {
+      refreshBtn.disabled = true; refreshBtn.textContent = "Определяем…";
+      fetchPublicIp(true).then(function (ip) {
+        showToast("Публичный IP: " + ip, "info");
+        renderShadowBanList();
+      }).catch(function () {
+        showToast("Не удалось определить публичный IP (нет сети?).", "warning");
+      }).finally(function () {
+        refreshBtn.disabled = false; refreshBtn.textContent = "Обновить IP этого устройства";
+        updateShadowBanIpLabel();
+      });
+      updateShadowBanIpLabel();
+    });
+  }
+  var banIpBtn = document.getElementById("shadowBanIpButton");
+  if (banIpBtn && !banIpBtn.dataset.wired) {
+    banIpBtn.dataset.wired = "1";
+    banIpBtn.addEventListener("click", function () {
+      var input = document.getElementById("shadowBanIpInput");
+      if (banByIp(input ? input.value : "")) { if (input) input.value = ""; }
+    });
+  }
+  var unbanSelfBtn = document.getElementById("shadowUnbanSelfButton");
+  if (unbanSelfBtn && !unbanSelfBtn.dataset.wired) {
+    unbanSelfBtn.dataset.wired = "1";
+    unbanSelfBtn.addEventListener("click", liftShadowBan);
+  }
+  // Ban/unban buttons in the account list (delegated once).
+  var users = dom.userList;
+  if (users && !users.dataset.banWired) {
+    users.dataset.banWired = "1";
+    users.addEventListener("click", function (e) {
+      var banBtn = e.target.closest(".user-shadow-ban, .user-shadow-unban");
+      if (!banBtn || !users.contains(banBtn)) return;
+      var accId = banBtn.dataset.accountId;
+      var accounts = loadAuthAccounts();
+      var acc = null;
+      for (var i = 0; i < accounts.length; i++) { if (accounts[i].id === accId) { acc = accounts[i]; break; } }
+      var name = acc ? acc.fullName : accId.slice(0, 8);
+      if (banBtn.classList.contains("user-shadow-unban")) {
+        setAccountShadowBan(accId, false);
+        showToast("Теневой бан снят: «" + name + "»", "success");
+      } else {
+        setAccountShadowBan(accId, true, name);
+        showToast("Аккаунт «" + name + "» отправлен в теневой бан.", "success");
+      }
+      renderUserList();
+    });
+  }
+  updateShadowBanIpLabel();
+}
 /* ---------- Gray system text on the main screen ---------- */
 // A muted, non-interactive line under the page header. Its content comes from
 // settings («Системный текст») and is shared through the synced journal, so
@@ -321,7 +405,7 @@ var syncConfig = { enabled: false, token: "", gistId: "", isPublicGist: false, l
 var deviceId = "", logicalTime = 0, activeModal = null, previousFocus = null, modalStack = [];
 var attendanceModalState = { open: false, studentId: "", dateKey: "", currentStatus: STATUS_UNMARKED };
 var dom = {};
-["userList", "refreshUserListButton", "studentName", "addStudentButton", "monthPicker", "previousMonthButton", "nextMonthButton", "todayButton", "monthTitle", "tableHead", "tableBody", "emptyMessage", "searchInput", "clearSearchButton", "searchResultsInfo", "noSearchResults", "toast", "syncStatus", "syncStatusText", "toggleSyncConfigButton", "syncConfig", "githubToken", "gistId", "gistPublicCheckbox", "publicGistWarning", "saveSyncConfigButton", "testConnectionButton", "disableSyncButton", "syncNowButton", "forcePushButton", "forcePullButton", "debugButton", "refreshDebugButton", "copyDebugButton", "debugBlock", "debugPre", "intervalSelect", "newsBanner", "newsText", "newsCloseButton", "versionButton", "versionButtonText", "journalEdition", "devPanelModal", "devCloseButton", "devExitButton", "devVersionTextInput", "devSaveVersionTextButton", "devResetVersionTextButton", "devToggleMaintenanceButton", "devMaintenanceMessageInput", "devSaveMaintenanceMessageButton", "devResetMaintenanceMessageButton", "devNewsInput", "devSaveNewsButton", "devClearNewsButton", "devClearAllButton", "maintenanceOverlay", "maintenanceMessageText", "maintenanceActiveBadge", "maintenanceDevAccessButton", "attendanceModal", "attCloseButton", "attStudentName", "attDateText", "attOptions", "localSaveStatus", "exportBackupButton", "importBackupButton", "importBackupInput", "restoreBackupButton", "printButton", "summaryStudents", "summaryPresent", "summaryAbsent", "summaryLate", "coverageInfo", "journalApp", "printMonthTitle"].forEach(function (id) { dom[id] = document.getElementById(id); });
+["userList", "refreshUserListButton", "studentName", "addStudentButton", "monthPicker", "previousMonthButton", "nextMonthButton", "todayButton", "monthTitle", "tableHead", "tableBody", "emptyMessage", "searchInput", "clearSearchButton", "searchResultsInfo", "noSearchResults", "toast", "syncStatus", "syncStatusText", "toggleSyncConfigButton", "syncConfig", "githubToken", "gistId", "gistPublicCheckbox", "publicGistWarning", "saveSyncConfigButton", "testConnectionButton", "disableSyncButton", "syncNowButton", "forcePushButton", "forcePullButton", "debugButton", "refreshDebugButton", "copyDebugButton", "debugBlock", "debugPre", "intervalSelect", "newsBanner", "newsText", "newsCloseButton", "versionButton", "versionButtonText", "journalEdition", "devPanelModal", "devCloseButton", "devExitButton", "devVersionTextInput", "devSaveVersionTextButton", "devResetVersionTextButton", "devToggleMaintenanceButton", "devMaintenanceMessageInput", "devSaveMaintenanceMessageButton", "devResetMaintenanceMessageButton", "devNewsInput", "devSaveNewsButton", "devClearNewsButton", "devClearAllButton", "maintenanceOverlay", "maintenanceMessageText", "maintenanceActiveBadge", "maintenanceDevAccessButton", "attendanceModal", "attCloseButton", "attStudentName", "attDateText", "attOptions", "localSaveStatus", "exportBackupButton", "importBackupButton", "importBackupInput", "restoreBackupButton", "printButton", "summaryStudents", "summaryPresent", "summaryAbsent", "summaryLate", "coverageInfo", "journalApp", "printMonthTitle", "systemTextLine", "devSystemTextInput", "devSaveSystemTextButton", "devResetSystemTextButton"].forEach(function (id) { dom[id] = document.getElementById(id); });
 dom.studentNameInput = dom.studentName;
 var storage = accessibleStorage("localStorage"), sessStorage = accessibleStorage("sessionStorage");
 /* ---------- Educational institutions (учебные учреждения) ---------- */
@@ -1769,7 +1853,7 @@ function flushRender() {
     if (studentAddMode === "registered") populateStudentAccountSelect();
   }
   dom.versionButtonText.textContent = state.settings.versionText; dom.versionButton.setAttribute("aria-label", state.settings.versionText + ". Открыть настройки по коду"); if (dom.journalEdition) dom.journalEdition.textContent = settingsVersionText();
-  renderNews(); renderMaintenance();
+  renderNews(); renderMaintenance(); refreshSystemText();
   // Homework panel: rebuild only when its data actually changed.
   var hwSigReal = (state.homework || []).map(function (h) { return h.id + ":" + (h.deleted ? 1 : 0) + ":" + String(h.text || "") + ":" + (h.dueDate || "") + ":" + (h.classId || ""); }).join("#") + "|" + state.selectedClass + "|" + syncReadOnly();
   if (hwSigReal !== lastHomeworkSig) { lastHomeworkSig = hwSigReal; renderHomework(); }
@@ -1847,6 +1931,20 @@ function renderUserList() {
     remove.disabled = !canManage;
     remove.title = canManage ? "Удалить этот аккаунт с устройства" : "Удалять аккаунты могут только учитель или тех. администрация";
     row.appendChild(remove);
+    // Manual shadow-ban toggle for this account — available ONLY from the
+    // settings panel (the dev panel is reachable solely after the code entry).
+    var bannedNow = isAccountShadowBanned(account.id);
+    row.dataset.banned = bannedNow ? "1" : "";
+    var banBtn = document.createElement("button"); banBtn.type = "button";
+    banBtn.className = bannedNow ? "secondary user-shadow-unban" : "danger user-shadow-ban";
+    banBtn.dataset.accountId = account.id;
+    banBtn.textContent = bannedNow ? "Снять бан" : "Теневой бан";
+    banBtn.title = bannedNow ? "Снять теневой бан с этого аккаунта" : "Отправить этот аккаунт в теневой бан";
+    row.appendChild(banBtn);
+    if (bannedNow) {
+      var flag = document.createElement("span"); flag.className = "device-badge shadow-ban-flag"; flag.textContent = "теневой бан";
+      info.insertBefore(flag, name.nextSibling);
+    }
     container.appendChild(row);
   });
 }
@@ -1991,6 +2089,8 @@ function scheduleSearchRender() {
 }
 function refreshDevPanel() {
   dom.devVersionTextInput.value = state.settings.versionText; dom.devMaintenanceMessageInput.value = state.settings.maintenanceMessage; dom.devNewsInput.value = state.settings.news;
+  if (dom.devSystemTextInput) dom.devSystemTextInput.value = state.settings.systemText || "";
+  renderShadowBanList(); wireShadowBanList(); wireShadowBanControls();
   dom.devToggleMaintenanceButton.textContent = state.settings.maintenance ? "Завершить обслуживание" : "Включить экран обслуживания";
   dom.devToggleMaintenanceButton.className = state.settings.maintenance ? "danger" : "secondary";
   renderDeviceList();
@@ -2091,6 +2191,8 @@ function wireCoreEvents() {
   dom.devResetMaintenanceMessageButton.addEventListener("click", function () { updateSettings({ maintenanceMessage: DEFAULT_MAINTENANCE_MSG }); refreshDevPanel(); });
   dom.devSaveNewsButton.addEventListener("click", function () { updateSettings({ news: dom.devNewsInput.value.trim().slice(0, 4000) }); try { if (storage) storage.removeItem(NEWS_DISMISS_KEY); } catch (e) {} renderNews(); showToast("Объявление сохранено", "success"); });
   dom.devClearNewsButton.addEventListener("click", function () { updateSettings({ news: "" }); refreshDevPanel(); });
+  if (dom.devSaveSystemTextButton) dom.devSaveSystemTextButton.addEventListener("click", function () { var text = (dom.devSystemTextInput ? dom.devSystemTextInput.value : "").trim().slice(0, 200); updateSettings({ systemText: text }); refreshSystemText(); showToast(text ? "Системный текст сохранён" : "Системный текст очищен", "success"); });
+  if (dom.devResetSystemTextButton) dom.devResetSystemTextButton.addEventListener("click", function () { updateSettings({ systemText: "" }); if (dom.devSystemTextInput) dom.devSystemTextInput.value = ""; refreshSystemText(); showToast("Системный текст сброшен к стандартному", "info"); });
   if (dom.devClearAllButton) dom.devClearAllButton.addEventListener("click", clearAllJournalData);
   if (dom.refreshUserListButton) dom.refreshUserListButton.addEventListener("click", function () { renderUserList(); showToast("Список пользователей обновлён", "info"); });
   if (dom.userList) dom.userList.addEventListener("click", function (e) {
@@ -3847,6 +3949,8 @@ function wireAppUpdates(){
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+// Test/debug handle: exposes the app's global scope to jsdom-based smoke tests.
+window.__journalApp = { get state() { return state; }, dom: dom, refreshDevPanel: refreshDevPanel, isValidIpv4: isValidIpv4, loadDeviceShadowBans: loadDeviceShadowBans, loadAccountShadowBans: loadAccountShadowBans, setCodeFails: setCodeFails, getShadowBan: getShadowBan, checkShadowBanned: isShadowBanned, submitSettingsCode: submitSettingsCode, effectivePermissions: effectivePermissions, liftShadowBan: liftShadowBan, loadAuthAccounts: loadAuthAccounts, saveAuthAccounts: saveAuthAccounts, renderUserList: renderUserList, isAccountShadowBanned: isAccountShadowBanned, setAccountShadowBan: setAccountShadowBan };
 
 /* Full wipe implementation (project layer): marks every student, lesson and
    homework record as deleted across ALL classes, resets all attendance and

@@ -3674,3 +3674,14 @@ html[data-theme="dark"] .theme-seg-btn.is-active { box-shadow: 0 1px 3px rgba(0,
 .maintenance-overlay.open ~ .autumn-leaves span { animation-play-state: paused; }
 body:has(.modal-backdrop.open) .autumn-leaves span,
 body:has(.maintenance-overlay.open) .autumn-leaves span { animation-play-state: paused; }
+
+/* ---------- Gray system text line on the main screen ---------- */
+.system-text-line{margin:6px 0 0;font-size:12.5px;line-height:1.4;color:#8a8f98;letter-spacing:.01em;user-select:none}
+@media screen and (prefers-color-scheme:dark){.system-text-line{color:#7d838c}}
+html[data-theme="dark"] .system-text-line{color:#7d838c}
+html[data-theme="light"] .system-text-line{color:#8a8f98}
+.system-text-line[hidden]{display:none}
+/* Shadow-ban badge in the account list of the settings panel */
+.shadow-ban-flag{background:#4b5563!important;color:#fff!important;border-radius:999px;padding:2px 8px;margin-left:8px;font-size:11px;font-weight:600}
+#shadowBanCurrentIp{align-self:center}
+.row-actions input[type="text"]{flex:1;min-width:160px}
