@@ -1,5 +1,6 @@
 // Verifies the sync timing fix: push fires immediately after idle, echo pulls
-// land only AFTER the GitHub CDN stale-cache grace window (~60 s).
+// start as a fast burst (1.5/4/9 s via noCache fetches that bypass the CDN)
+// and continue with late pulls past the GitHub CDN stale-cache grace window.
 const vm = require('vm');
 const fs = require('fs');
 const src = fs.readFileSync('app.js', 'utf8');
@@ -48,8 +49,10 @@ const immediate = [...timers.values()].filter(t => t.at === now);
 if (!immediate.length) throw new Error('FAIL: expected immediate push when idle > debounce window');
 const echoDelays = sandbox.syncRuntime.echoTimers.map(tid => timers.get(tid).at - now);
 if (!echoDelays.length) throw new Error('FAIL: echo polls not scheduled');
-if (echoDelays.some(d => d <= 60000)) throw new Error('FAIL: echo pull within CDN grace window: ' + echoDelays.join(','));
-console.log('OK scenario 1: push@0ms, echo delays =', echoDelays.join(', '), 'ms');
+const sortedEcho = echoDelays.slice().sort((a, b) => a - b);
+if (sortedEcho[0] > 5000) throw new Error('FAIL: no fast echo burst pull within 5s: ' + sortedEcho.join(','));
+if (!sortedEcho.some(d => d >= 75000)) throw new Error('FAIL: no late echo pull past CDN grace window: ' + sortedEcho.join(','));
+console.log('OK scenario 1: push@0ms, echo delays =', sortedEcho.join(', '), 'ms');
 
 // Scenario 2: rapid consecutive marks -> push debounced relative to last push.
 now += 1000;
@@ -71,13 +74,27 @@ now = timers.get(firstId).at;
 timers.get(firstId).fn();
 if (sandbox.__lastSyncReason !== 'echo') throw new Error('FAIL: echo timer did not call fullSync("echo")');
 if (sandbox.syncRuntime.echoTimers.includes(firstId)) throw new Error('FAIL: fired echo timer still in list');
-if (sandbox.syncRuntime.echoTimers.length !== 2) throw new Error('FAIL: wrong remaining echo count ' + sandbox.syncRuntime.echoTimers.length);
+if (sandbox.syncRuntime.echoTimers.length !== 5) throw new Error('FAIL: wrong remaining echo count ' + sandbox.syncRuntime.echoTimers.length);
 console.log('OK scenario 3: echo fired fullSync("echo") and self-removed, remaining', sandbox.syncRuntime.echoTimers.length);
 
 // Scenario 4: clearEchoPolls cancels all pending echoes.
 vm.runInContext('clearEchoPolls()', sandbox);
 if (sandbox.syncRuntime.echoTimers.length) throw new Error('FAIL: clearEchoPolls left timers');
-const echoLeft = [...timers.values()].filter(t => t.at > now && t.at - now >= 75000);
 console.log('OK scenario 4: clearEchoPolls cancelled pending echoes');
+
+// Scenario 5: rapid successive marks must NOT cancel the echo schedule of
+// earlier marks (regression guard for the "only after reload" bug: the old
+// implementation called clearEchoPolls() on every scheduleSync()).
+now += 1000;
+sandbox.syncRuntime.lastLocalMutationAt = now;
+sandbox.syncRuntime.lastPushedAt = now - 10 * 60 * 1000;
+vm.runInContext('scheduleSync()', sandbox);
+const afterFirstMark = sandbox.syncRuntime.echoTimers.length;
+now += 800;
+sandbox.syncRuntime.lastLocalMutationAt = now;
+vm.runInContext('scheduleSync()', sandbox);
+const afterSecondMark = sandbox.syncRuntime.echoTimers.length;
+if (afterSecondMark <= afterFirstMark) throw new Error('FAIL: second mark erased/collapsed echo timers (' + afterFirstMark + ' -> ' + afterSecondMark + ')');
+console.log('OK scenario 5: echo timers accumulate across rapid marks:', afterFirstMark, '->', afterSecondMark);
 
 console.log('ALL ECHO TIMING TESTS PASSED');

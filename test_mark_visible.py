@@ -38,6 +38,15 @@ def login(page):
     page.click("#authRegisterSubmit")
     page.wait_for_function("() => !document.getElementById('authGate').hidden === false || getComputedStyle(document.getElementById('authGate')).display === 'none'", timeout=10000)
     page.wait_for_timeout(400)
+    # A freshly registered account defaults to the read-only «Ученик» role, so
+    # every journal control is disabled. This test acts as a TEACHER device:
+    # promote it explicitly (same flag the settings role picker sets).
+    page.evaluate("""() => {
+        const s = currentAuthSession();
+        if (s) { s.roleExplicit = true; saveAuthSession(s); }
+        applyRoleRestrictions();
+    }""")
+    page.wait_for_selector("#studentName:not([disabled])", timeout=5000)
 
 def connect_sync(page):
     page.evaluate("""(gid) => {
@@ -86,17 +95,36 @@ with sync_playwright() as p:
     a.wait_for_function("() => syncRuntime.lastPushedAt > 0 && !syncRuntime.hasPendingChanges", timeout=8000)
     print(f"OK: push completed in {time.time()-t0:.1f}s of the mark")
 
-    # Device B runs the echo path (what scheduleEchoPolls timers invoke in prod).
-    b.evaluate("() => fullSync('echo')")
-    b.wait_for_function("() => !syncRuntime.isSyncing", timeout=15000)
+    # Device B never triggers a manual pull: in production the mark must reach
+    # it purely via the automatic echo burst scheduled after device A's change
+    # (scheduleEchoPolls -> fullSync("echo") at 1.5/4/9 s). If the timers or
+    # the noCache pull break, this wait times out — exactly the user-reported
+    # "отметки появляются только после перезагрузки страницы" regression.
     b.evaluate("() => { window.__noReloadMarker = 1; }")
+    t0 = time.time()
     b.wait_for_function(f"""() => {{
         const btn = document.querySelector('{sel}');
         return btn && /present|status-present/.test(btn.className);
-    }}""", timeout=4000)
-    print("OK: mark appeared on device B after echo pull, NO page reload")
+    }}""", timeout=20000)
+    print(f"OK: mark appeared on device B automatically in {time.time()-t0:.1f}s via echo burst, NO manual pull, NO page reload")
     assert b.evaluate("() => window.__noReloadMarker === 1"), "page B reloaded during test"
     print("OK: device B never reloaded")
+
+    # Rapid successive marks: every earlier mark's echo schedule must survive
+    # (regression guard against clearEchoPolls() being called per mutation).
+    second_date_key = a.evaluate("""() => {
+        const d = new Date(); d.setDate(d.getDate() - 1);
+        return formatDateKey(d);
+    }""")
+    sel2 = f'.attendance-button[data-student-id="{student_id}"][data-date-key="{second_date_key}"]'
+    a.click(sel2)
+    a.wait_for_selector("#attendanceModal.open", timeout=5000)
+    a.click('#attOptions .att-option[data-status="absent"]')
+    b.wait_for_function(f"""() => {{
+        const btn = document.querySelector('{sel2}');
+        return btn && /absent|status-absent/.test(btn.className);
+    }}""", timeout=20000)
+    print("OK: second rapid mark also propagated to device B without reload")
 
     browser.close()
 print("ALL MARK-VISIBLE TESTS PASSED")
