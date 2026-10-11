@@ -11,11 +11,27 @@ var GIST_FILENAME = "attendance.json";
 // 60 s while the connection keeps failing. Pushes after edits are debounced
 // 2.5 s so rapid tapping no longer queues several uploads in a row.
 var DEFAULT_POLL_INTERVAL_MS = 60000, PUSH_DEBOUNCE_MS = 2500;
+// Tablets report themselves as "wide phones" (701–1100 px), and their browsers
+// throttle timers much harder than desktops. The old calm 60 s cadence still
+// stacked up: every poll = fetch + full JSON merge + re-render, and several
+// pending pushes fired back-to-back after a burst of edits — which showed up
+// as the periodic freeze only tablet users complained about. On wide touch
+// devices the default is now one quiet check every 5 minutes with a longer
+// push debounce. Any explicit choice in settings always wins.
+function isWideTouchDevice() {
+  try {
+    return window.matchMedia("(min-width: 701px) and (max-width: 1100px)").matches &&
+           ("ontouchstart" in window || navigator.maxTouchPoints > 0);
+  } catch (error) { return false; }
+}
+var TABLET_POLL_INTERVAL_MS = 300000, TABLET_PUSH_DEBOUNCE_MS = 4000;
 // One-time migration of previously saved intervals: devices that still carry
 // the old aggressive "5 s" or "15 s" setting would keep hammering GitHub and
 // re-merging/re-rendering every few seconds — the main background lag source.
 // Manual mode (0) and the gentle "60 s" choice are left untouched.
-function migratePollInterval(ms) { return ms === 5000 || ms === 15000 || ms === 30000 ? DEFAULT_POLL_INTERVAL_MS : ms; }
+function migratePollInterval(ms) { return ms === 5000 || ms === 15000 || ms === 30000 ? (isWideTouchDevice() ? TABLET_POLL_INTERVAL_MS : DEFAULT_POLL_INTERVAL_MS) : ms; }
+// One-time step for tablets that kept the former default: 60 s -> 5 min.
+function tabletPaceUpgrade(interval) { return interval === DEFAULT_POLL_INTERVAL_MS ? TABLET_POLL_INTERVAL_MS : interval; }
 var SETTINGS_UNLOCK_KEY = "attendance_settings_unlocked";
 var SETTINGS_CODE_SET_KEY = "attendance_settings_code_set";
 var BACKUP_KEY = "attendance_recovery_backups";
@@ -35,12 +51,31 @@ var THEME_KEY = "attendance_theme";
 // choice ("light"/"dark") is stored per device in localStorage and overrides
 // the system until the user returns to "auto". Applied inline on <html> before
 // first paint to avoid a white flash when opening the app in dark mode.
-function getThemePreference() { try { var v = storage && storage.getItem(THEME_KEY); return v === "light" || v === "dark" ? v : "auto"; } catch (error) { return "auto"; } }
+function getThemePreference() {
+  // Read the plain key first (what the <head> anti-flash snippet uses), then
+  // fall back to the institution-scoped key written by older builds so their
+  // saved manual choice keeps working after this update.
+  try {
+    var v = storage && storage.getItem(THEME_KEY);
+    if (v !== "light" && v !== "dark") v = storage && storage.getItem(instKey(THEME_KEY));
+    return v === "light" || v === "dark" ? v : "auto";
+  } catch (error) { return "auto"; }
+}
 function resolveEffectiveTheme(pref) { if (pref === "light" || pref === "dark") return pref; try { return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"; } catch (error) { return "light"; } }
 function applyThemeChoice(pref, persist) {
   var el = document.documentElement;
   if (pref === "light" || pref === "dark") el.setAttribute("data-theme", pref); else el.removeAttribute("data-theme");
-  if (persist) { try { if (pref === "auto") storage.removeItem(THEME_KEY); else storage.setItem(THEME_KEY, pref); } catch (error) {} }
+  // Persist under the plain (un-namespaced) key AND the institution-scoped one.
+  // Older builds wrote only the scoped key while the pre-paint snippet in the
+  // <head> reads the plain key — the two disagreed and manual themes silently
+  // reset on reload. Keeping both makes the choice survive refreshes on every
+  // device and institution.
+  if (persist) {
+    try {
+      if (pref === "auto") { storage.removeItem(THEME_KEY); storage.removeItem(instKey(THEME_KEY)); }
+      else { storage.setItem(THEME_KEY, pref); storage.setItem(instKey(THEME_KEY), pref); }
+    } catch (error) {}
+  }
   updateThemeMeta(); updateThemeUI();
 }
 function updateThemeMeta() {
@@ -76,13 +111,293 @@ function initTheme() {
     showToast(btn.dataset.themeChoice === "auto" ? "Тема следует настройке устройства" : btn.dataset.themeChoice === "dark" ? "Включена тёмная тема" : "Включена светлая тема", "info");
   });
 }
+/* ---------- Shadow ban (тёневой бан) & settings-code protection ---------- */
+// Every failed attempt to enter the six-digit settings code is counted per
+// device (plain localStorage — like the theme choice it is a device property,
+// not journal data). After SETTINGS_MAX_FAILED_CODE_ATTEMPTS consecutive
+// misses the device drops into a shadow ban: the journal keeps opening, but
+// every mutating control is locked and a gray system line appears on the main
+// screen. The ban can be lifted ONLY from the settings panel («Теневой бан»
+// section), which itself stays reachable through the maintenance/settings
+// access button so an adult with the code can always undo it. A successful
+// code entry resets the failure counter. Bans are also stored globally so the
+// account list in settings shows which accounts were shadow-banned; an admin
+// can ban or unban any listed account/device from there.
+var SHADOW_BAN_KEY = "attendance_shadow_ban";
+var CODE_FAILS_KEY = "attendance_code_fails";
+var ACCOUNT_SHADOW_BANS_KEY = "attendance_account_shadow_bans";
+// Device-ID ban registry and the per-account password-failure counter that
+// triggers it. Both live in localStorage like every other device-local flag.
+var DEVICE_SHADOW_BANS_KEY = "attendance_device_shadow_bans";
+var AUTH_FAILS_KEY = "attendance_auth_fails";
+// Public IP cache. A browser cannot read its own network address, so the
+// external (public) IP is fetched once from a free lookup service and kept
+// for an hour; every ban record stores it so an admin can ban a whole
+// network by IP from the settings panel.
+var PUBLIC_IP_CACHE_KEY = "attendance_public_ip_cache";
+var PUBLIC_IP_TTL_MS = 60 * 60 * 1000;
+var SETTINGS_MAX_FAILED_CODE_ATTEMPTS = 5;
+var AUTH_MAX_FAILED_PASSWORD_ATTEMPTS = 5;
+var DEFAULT_SYSTEM_TEXT = "Учебный журнал посещаемости"; // gray line under the header when nothing custom is set
+function getShadowBan() {
+  try { var raw = storage && storage.getItem(SHADOW_BAN_KEY); return raw ? JSON.parse(raw) : null; }
+  catch (error) { return null; }
+}
+// The effective shadow-ban state of THIS device: either a direct device ban or
+// a ban inherited from the logged-in account or from the device's public IP.
+function isShadowBanned() {
+  if (getShadowBan()) return true;
+  try {
+    var sess = currentAuthSession();
+    if (sess && sess.accountId && loadAccountShadowBans()[sess.accountId]) return true;
+    var ip = getCachedPublicIp();
+    if (ip && loadDeviceShadowBans()["ip:" + ip]) return true;
+  } catch (error) {}
+  return false;
+}
+function getCodeFails() { try { return Math.max(0, Number(storage && storage.getItem(CODE_FAILS_KEY)) || 0); } catch (error) { return 0; } }
+function setCodeFails(n) { try { if (n <= 0) storage.removeItem(CODE_FAILS_KEY); else storage.setItem(CODE_FAILS_KEY, String(n)); } catch (error) {} }
+function getAuthFails() { try { return Math.max(0, Number(storage && storage.getItem(AUTH_FAILS_KEY)) || 0); } catch (error) { return 0; } }
+function setAuthFails(n) { try { if (n <= 0) storage.removeItem(AUTH_FAILS_KEY); else storage.setItem(AUTH_FAILS_KEY, String(n)); } catch (error) {} }
+// Records a ban on this device only (settings-code lockout).
+function applyShadowBan(reason) {
+  try {
+    storage.setItem(SHADOW_BAN_KEY, JSON.stringify({ at: Date.now(), reason: String(reason || "").slice(0, 200) }));
+  } catch (error) { return false; }
+  refreshSystemText(); renderMaintenance(); applyRoleRestrictions(); render();
+  showToast("Устройство отправлено в теневой бан.", "warning");
+  return true;
+}
+// Lifts every layer of ban affecting this device: the local device flag, the
+// account entry and the IP entry (if the cached public IP matches).
+function liftShadowBan() {
+  try {
+    storage.removeItem(SHADOW_BAN_KEY); setCodeFails(0); setAuthFails(0);
+    var sess = currentAuthSession();
+    if (sess && sess.accountId) setAccountShadowBan(sess.accountId, false, "", true);
+    var ip = getCachedPublicIp();
+    if (ip) setDeviceShadowBan("ip:" + ip, false, "", true);
+    if (deviceId) setDeviceShadowBan(deviceId, false, "", true);
+  } catch (error) {}
+  refreshSystemText(); renderMaintenance(); applyRoleRestrictions(); render();
+  renderShadowBanList();
+  showToast("Теневой бан снят с этого устройства.", "success");
+}
+// Global registry of shadow-banned accounts (visible in settings).
+function loadAccountShadowBans() {
+  try { var raw = storage && storage.getItem(ACCOUNT_SHADOW_BANS_KEY); var m = raw ? JSON.parse(raw) : {}; return m && typeof m === "object" && !Array.isArray(m) ? m : {}; }
+  catch (error) { return {}; }
+}
+function saveAccountShadowBans(map) { try { if (storage) storage.setItem(ACCOUNT_SHADOW_BANS_KEY, JSON.stringify(map)); } catch (error) {} }
+function setAccountShadowBan(id, enabled, label, quiet) {
+  var map = loadAccountShadowBans();
+  if (enabled) map[id] = { at: Date.now(), label: String(label || "").slice(0, 80) };
+  else delete map[id];
+  saveAccountShadowBans(map);
+  if (!quiet) { renderShadowBanList(); refreshSystemText(); renderMaintenance(); applyRoleRestrictions(); render(); }
+}
+function isAccountShadowBanned(id) { return Boolean(loadAccountShadowBans()[id]); }
+// Global registry of banned devices / IP addresses ("ip:1.2.3.4" keys are
+// network bans that hit every device behind that public address).
+function loadDeviceShadowBans() {
+  try { var raw = storage && storage.getItem(DEVICE_SHADOW_BANS_KEY); var m = raw ? JSON.parse(raw) : {}; return m && typeof m === "object" && !Array.isArray(m) ? m : {}; }
+  catch (error) { return {}; }
+}
+function saveDeviceShadowBans(map) { try { if (storage) storage.setItem(DEVICE_SHADOW_BANS_KEY, JSON.stringify(map)); } catch (error) {} }
+function setDeviceShadowBan(id, enabled, label, quiet) {
+  var map = loadDeviceShadowBans();
+  if (enabled) map[id] = { at: Date.now(), label: String(label || "").slice(0, 80) };
+  else delete map[id];
+  saveDeviceShadowBans(map);
+  if (!quiet) { renderShadowBanList(); refreshSystemText(); renderMaintenance(); applyRoleRestrictions(); render(); }
+}
+/* ---------- Public IP (for network-level shadow bans) ---------- */
+function getCachedPublicIp() {
+  try {
+    var raw = storage && storage.getItem(PUBLIC_IP_CACHE_KEY); if (!raw) return "";
+    var c = JSON.parse(raw);
+    if (!c || !c.ip || !(c.at > 0) || Date.now() - c.at > PUBLIC_IP_TTL_MS) return "";
+    return String(c.ip);
+  } catch (error) { return ""; }
+}
+function fetchPublicIp(force) {
+  if (!force && getCachedPublicIp()) return Promise.resolve(getCachedPublicIp());
+  return fetch("https://api.ipify.org?format=json")
+    .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+    .then(function (j) {
+      var ip = String((j && j.ip) || "").trim();
+      if (!ip) throw new Error("Пустой ответ");
+      try { if (storage) storage.setItem(PUBLIC_IP_CACHE_KEY, JSON.stringify({ ip: ip, at: Date.now() })); } catch (error) {}
+      return ip;
+    });
+}
+// Called after login: if this device's network was IP-banned while nobody was
+// signed in to notice, enforce the ban as soon as the session appears.
+function enforceIpBanOnLogin() {
+  var ip = getCachedPublicIp();
+  if (ip && loadDeviceShadowBans()["ip:" + ip] && !getShadowBan()) {
+    applyShadowBan("Бан по IP-адресу " + ip);
+  }
+}
+function renderShadowBanList() {
+  var wrap = document.getElementById("shadowBanList");
+  if (!wrap) return;
+  var bans = loadAccountShadowBans();
+  var devBans = loadDeviceShadowBans();
+  var local = getShadowBan();
+  var rows = [];
+  if (local) rows.push('<div class="device-row"><span class="device-name">Это устройство</span><span class="device-seen">' + formatTime(local.at) + '</span><button type="button" class="secondary shadow-unban-btn" data-shadow-target="self-device">Снять бан</button></div>');
+  Object.keys(bans).forEach(function (id) {
+    var b = bans[id];
+    var name = (loadAuthAccounts().find(function (a) { return a.id === id; }) || {}).fullName || b.label || id.slice(0, 8);
+    rows.push('<div class="device-row"><span class="device-name">Аккаунт: ' + escapeHtml(name) + '</span><span class="device-seen">' + formatTime(b.at) + '</span><button type="button" class="secondary shadow-unban-btn" data-shadow-unban="account:' + escapeHtml(id) + '">Снять бан</button></div>');
+  });
+  Object.keys(devBans).forEach(function (id) {
+    var b = devBans[id];
+    var isIp = id.indexOf("ip:") === 0;
+    var name = b.label || (isIp ? "IP: " + id.slice(3) : "Устройство: " + ((state.deviceMeta || {})[id] || {}).name || id.slice(0, 8));
+    rows.push('<div class="device-row"><span class="device-name">' + escapeHtml(name) + '</span><span class="device-seen">' + formatTime(b.at) + '</span><button type="button" class="secondary shadow-unban-btn" data-shadow-unban="' + escapeHtml(id) + '">Снять бан</button></div>');
+  });
+  wrap.innerHTML = rows.length ? rows.join("") : '<p class="help-text">Сейчас никто не в теневом бане.</p>';
+}
+function wireShadowBanList() {
+  var wrap = document.getElementById("shadowBanList");
+  if (!wrap || wrap.dataset.wired) return;
+  wrap.dataset.wired = "1";
+  wrap.addEventListener("click", function (e) {
+    var btn = e.target.closest("[data-shadow-unban], [data-shadow-target]");
+    if (!btn) return;
+    if (btn.dataset.shadowTarget === "self-device") { liftShadowBan(); return; }
+    var id = btn.dataset.shadowUnban;
+    if (!id) return;
+    if (id.indexOf("account:") === 0) {
+      var accId = id.slice(8);
+      setAccountShadowBan(accId, false);
+      showToast("Теневой бан снят: «" + ((loadAuthAccounts().find(function(a){return a.id===accId;})||{}).fullName || accId.slice(0,8)) + "»", "success");
+      return;
+    }
+    setDeviceShadowBan(id, false);
+    showToast(id.indexOf("ip:") === 0 ? "Бан по IP-адресу снят." : "Бан устройства снят.", "success");
+  });
+}
+// Manual BAN ISSUING also lives only inside the settings panel: an admin can
+// ban any listed account/device by IP. The address is validated as IPv4.
+var IPV4_RE = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+function isValidIpv4(value) {
+  var m = IPV4_RE.exec(String(value || "").trim());
+  if (!m) return false;
+  for (var i = 1; i <= 4; i++) { if (Number(m[i]) > 255) return false; }
+  return true;
+}
+function banByIp(rawIp) {
+  var ip = String(rawIp || "").trim();
+  if (!isValidIpv4(ip)) { showToast("Введите корректный IPv4-адрес, например 203.0.113.25", "warning"); return false; }
+  setDeviceShadowBan("ip:" + ip, true, "Ручной бан по IP");
+  renderShadowBanList(); updateShadowBanIpLabel();
+  showToast("IP-адрес " + ip + " отправлен в теневой бан.", "success");
+  return true;
+}
+function banThisDevice() {
+  setDeviceShadowBan(deviceId || ("device:" + Date.now()), true, "Ручной бан устройства");
+  applyShadowBan("Бан выдан вручную из настроек");
+  renderShadowBanList();
+  showToast("Это устройство отправлено в теневой бан.", "success");
+}
+function updateShadowBanIpLabel() {
+  var el = document.getElementById("shadowBanCurrentIp");
+  if (!el) return;
+  var ip = getCachedPublicIp();
+  el.textContent = ip ? "Публичный IP этого устройства: " + ip : "Публичный IP не определён — нажмите «Обновить IP».";
+}
+function wireShadowBanControls() {
+  var refreshBtn = document.getElementById("shadowBanRefreshIpButton");
+  if (refreshBtn && !refreshBtn.dataset.wired) {
+    refreshBtn.dataset.wired = "1";
+    refreshBtn.addEventListener("click", function () {
+      refreshBtn.disabled = true; refreshBtn.textContent = "Определяем…";
+      fetchPublicIp(true).then(function (ip) {
+        showToast("Публичный IP: " + ip, "info");
+        renderShadowBanList();
+      }).catch(function () {
+        showToast("Не удалось определить публичный IP (нет сети?).", "warning");
+      }).finally(function () {
+        refreshBtn.disabled = false; refreshBtn.textContent = "Обновить IP этого устройства";
+        updateShadowBanIpLabel();
+      });
+      updateShadowBanIpLabel();
+    });
+  }
+  var banIpBtn = document.getElementById("shadowBanIpButton");
+  if (banIpBtn && !banIpBtn.dataset.wired) {
+    banIpBtn.dataset.wired = "1";
+    banIpBtn.addEventListener("click", function () {
+      var input = document.getElementById("shadowBanIpInput");
+      if (banByIp(input ? input.value : "")) { if (input) input.value = ""; }
+    });
+  }
+  var unbanSelfBtn = document.getElementById("shadowUnbanSelfButton");
+  if (unbanSelfBtn && !unbanSelfBtn.dataset.wired) {
+    unbanSelfBtn.dataset.wired = "1";
+    unbanSelfBtn.addEventListener("click", liftShadowBan);
+  }
+  // Ban/unban buttons in the account list (delegated once).
+  var users = dom.userList;
+  if (users && !users.dataset.banWired) {
+    users.dataset.banWired = "1";
+    users.addEventListener("click", function (e) {
+      var banBtn = e.target.closest(".user-shadow-ban, .user-shadow-unban");
+      if (!banBtn || !users.contains(banBtn)) return;
+      var accId = banBtn.dataset.accountId;
+      var accounts = loadAuthAccounts();
+      var acc = null;
+      for (var i = 0; i < accounts.length; i++) { if (accounts[i].id === accId) { acc = accounts[i]; break; } }
+      var name = acc ? acc.fullName : accId.slice(0, 8);
+      if (banBtn.classList.contains("user-shadow-unban")) {
+        setAccountShadowBan(accId, false);
+        showToast("Теневой бан снят: «" + name + "»", "success");
+      } else {
+        setAccountShadowBan(accId, true, name);
+        showToast("Аккаунт «" + name + "» отправлен в теневой бан.", "success");
+      }
+      renderUserList();
+    });
+  }
+  updateShadowBanIpLabel();
+}
+/* ---------- Gray system text on the main screen ---------- */
+// A muted, non-interactive line under the page header. Its content comes from
+// settings («Системный текст») and is shared through the synced journal, so
+// every device shows the same line. While the device sits in a shadow ban the
+// ban notice replaces it (the ban itself is device-local and must not leak
+// into the shared settings).
+function systemTextValue() {
+  var t = String(state.settings.systemText || "").trim();
+  if (t) return t;
+  if (DEFAULT_SYSTEM_TEXT) return DEFAULT_SYSTEM_TEXT;
+  return "";
+}
+function composeSystemText() {
+  if (isShadowBanned()) {
+    var b = getShadowBan();
+    return "Системное уведомление: это устройство ограничено в настройках" + (b && b.reason ? " — " + b.reason : "") + ".";
+  }
+  return systemTextValue();
+}
+function refreshSystemText() {
+  var el = dom.systemTextLine;
+  if (!el) return;
+  var text = composeSystemText();
+  el.textContent = text;
+  el.hidden = !text;
+}
+
 var TOMBSTONE_RETENTION_MS = 180 * 24 * 60 * 60 * 1000; // half a year
 var DEFAULT_VERSION_TEXT = "версия: 3.3";
 var DEFAULT_MAINTENANCE_MSG = "Журнал временно на обслуживании. Попробуйте вернуться позже.";
 var STATUS_PRESENT = "present", STATUS_ABSENT = "absent", STATUS_LATE = "late", STATUS_UNMARKED = "unmarked";
 var statusLabels = { present: "Присутствует", absent: "Отсутствует", late: "Онлайн", unmarked: "Не отмечено" };
 var statusSymbols = { present: "✓", absent: "Н", late: "О", unmarked: "·" }; // символ «О» сохранён для совместимости с историческими отметками типа late
-var settingFields = ["maintenance", "maintenanceMessage", "maintenanceBy", "news", "versionText"];
+var settingFields = ["maintenance", "maintenanceMessage", "maintenanceBy", "news", "versionText", "systemText"];
 var monthNames = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
 var weekdayNames = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 var state = { students: [], attendance: {}, settings: defaultSettings(), selectedMonth: getMonthString(new Date()), searchQuery: "", revision: 0, lastSyncedRevision: 0, devUnlocked: false, deviceMeta: {}, homework: [], absenceRequests: {} };
@@ -90,7 +405,7 @@ var syncConfig = { enabled: false, token: "", gistId: "", isPublicGist: false, l
 var deviceId = "", logicalTime = 0, activeModal = null, previousFocus = null, modalStack = [];
 var attendanceModalState = { open: false, studentId: "", dateKey: "", currentStatus: STATUS_UNMARKED };
 var dom = {};
-["userList", "refreshUserListButton", "studentName", "addStudentButton", "monthPicker", "previousMonthButton", "nextMonthButton", "todayButton", "monthTitle", "tableHead", "tableBody", "emptyMessage", "searchInput", "clearSearchButton", "searchResultsInfo", "noSearchResults", "toast", "syncStatus", "syncStatusText", "toggleSyncConfigButton", "syncConfig", "githubToken", "gistId", "gistPublicCheckbox", "publicGistWarning", "saveSyncConfigButton", "testConnectionButton", "disableSyncButton", "syncNowButton", "forcePushButton", "forcePullButton", "debugButton", "refreshDebugButton", "copyDebugButton", "debugBlock", "debugPre", "intervalSelect", "newsBanner", "newsText", "newsCloseButton", "versionButton", "versionButtonText", "journalEdition", "devPanelModal", "devCloseButton", "devExitButton", "devVersionTextInput", "devSaveVersionTextButton", "devResetVersionTextButton", "devToggleMaintenanceButton", "devMaintenanceMessageInput", "devSaveMaintenanceMessageButton", "devResetMaintenanceMessageButton", "devNewsInput", "devSaveNewsButton", "devClearNewsButton", "devClearAllButton", "maintenanceOverlay", "maintenanceMessageText", "maintenanceActiveBadge", "maintenanceDevAccessButton", "attendanceModal", "attCloseButton", "attStudentName", "attDateText", "attOptions", "localSaveStatus", "exportBackupButton", "importBackupButton", "importBackupInput", "restoreBackupButton", "printButton", "summaryStudents", "summaryPresent", "summaryAbsent", "summaryLate", "coverageInfo", "journalApp", "printMonthTitle"].forEach(function (id) { dom[id] = document.getElementById(id); });
+["userList", "refreshUserListButton", "studentName", "addStudentButton", "monthPicker", "previousMonthButton", "nextMonthButton", "todayButton", "monthTitle", "tableHead", "tableBody", "emptyMessage", "searchInput", "clearSearchButton", "searchResultsInfo", "noSearchResults", "toast", "syncStatus", "syncStatusText", "toggleSyncConfigButton", "syncConfig", "githubToken", "gistId", "gistPublicCheckbox", "publicGistWarning", "saveSyncConfigButton", "testConnectionButton", "disableSyncButton", "syncNowButton", "forcePushButton", "forcePullButton", "debugButton", "refreshDebugButton", "copyDebugButton", "debugBlock", "debugPre", "intervalSelect", "newsBanner", "newsText", "newsCloseButton", "versionButton", "versionButtonText", "journalEdition", "devPanelModal", "devCloseButton", "devExitButton", "devVersionTextInput", "devSaveVersionTextButton", "devResetVersionTextButton", "devToggleMaintenanceButton", "devMaintenanceMessageInput", "devSaveMaintenanceMessageButton", "devResetMaintenanceMessageButton", "devNewsInput", "devSaveNewsButton", "devClearNewsButton", "devClearAllButton", "maintenanceOverlay", "maintenanceMessageText", "maintenanceActiveBadge", "maintenanceDevAccessButton", "attendanceModal", "attCloseButton", "attStudentName", "attDateText", "attOptions", "localSaveStatus", "exportBackupButton", "importBackupButton", "importBackupInput", "restoreBackupButton", "printButton", "summaryStudents", "summaryPresent", "summaryAbsent", "summaryLate", "coverageInfo", "journalApp", "printMonthTitle", "systemTextLine", "devSystemTextInput", "devSaveSystemTextButton", "devResetSystemTextButton"].forEach(function (id) { dom[id] = document.getElementById(id); });
 dom.studentNameInput = dom.studentName;
 var storage = accessibleStorage("localStorage"), sessStorage = accessibleStorage("sessionStorage");
 /* ---------- Educational institutions (учебные учреждения) ---------- */
@@ -334,7 +649,7 @@ function canonical(value) {
   return JSON.stringify(value);
 }
 function isDataEqual(a, b) { return canonical(a) === canonical(b); }
-function defaultSettings() { return { maintenance: false, maintenanceMessage: DEFAULT_MAINTENANCE_MSG, maintenanceBy: "", news: "", versionText: DEFAULT_VERSION_TEXT, updatedAt: 0, fieldMeta: {} }; }
+function defaultSettings() { return { maintenance: false, maintenanceMessage: DEFAULT_MAINTENANCE_MSG, maintenanceBy: "", news: "", versionText: DEFAULT_VERSION_TEXT, systemText: "", updatedAt: 0, fieldMeta: {} }; }
 function timestamp(value, strict) {
   var time = Number(value || 0);
   if (!Number.isFinite(time) || time < 0 || time > Date.now() + 86400000) { if (strict) throw new Error("Некорректная дата изменения записи"); return 0; }
@@ -353,6 +668,7 @@ function cloneSettings(s, strict) {
   result.maintenanceBy = validId(s.maintenanceBy) ? s.maintenanceBy : "";
   result.news = typeof s.news === "string" ? s.news.slice(0, 4000) : "";
   result.versionText = typeof s.versionText === "string" && s.versionText.trim() ? s.versionText.trim().slice(0, 60) : DEFAULT_VERSION_TEXT;
+  result.systemText = typeof s.systemText === "string" ? s.systemText.trim().slice(0, 200) : "";
   result.updatedAt = timestamp(s.updatedAt, strict);
   settingFields.forEach(function (field) {
     var meta = s.fieldMeta && s.fieldMeta[field];
@@ -537,13 +853,18 @@ function setDeviceRole(id, role) {
 function effectivePermissions() {
   var role = deviceRole(deviceId);
   var techAdmin = deviceTechAdmin(deviceId) || state.devUnlocked; // dev-unlocked implies tech admin on this device
+  // Shadow ban (device, account or IP level) demotes every mutating right to
+  // read-only — the journal stays fully browsable, which is the point of a
+  // "shadow" restriction. It cannot be bypassed from inside the app: only
+  // lifting it from the settings panel restores write access.
+  if (techAdmin && isShadowBanned()) techAdmin = false;
   return {
     role: role,
     techAdmin: techAdmin,
-    canEditJournal: techAdmin || role === "teacher",   // attendance marks, students, classes, lessons
-    canManageHomework: techAdmin || role === "teacher", // add/delete homework
+    canEditJournal: !isShadowBanned() && (techAdmin || role === "teacher"),   // attendance marks, students, classes, lessons
+    canManageHomework: !isShadowBanned() && (techAdmin || role === "teacher"), // add/delete homework
     canViewStats: true,                                 // everyone can view reports/statistics
-    canManageDevices: techAdmin || role === "teacher"   // rename devices, assign roles
+    canManageDevices: !isShadowBanned() && (techAdmin || role === "teacher")   // rename devices, assign roles
   };
 }
 // Enforce the current device's role on the interface: read-only roles lock all
@@ -1159,6 +1480,18 @@ async function handleAuthRegister() {
 }
 async function handleAuthLogin(event) {
   var d = dom;
+  // A banned account cannot sign back in: the shadow ban follows it until an
+  // adult lifts it from the settings panel.
+  var preName = d.authLoginName.value.trim();
+  if (preName) {
+    var preAccounts = loadAuthAccounts();
+    for (var pi = 0; pi < preAccounts.length; pi++) {
+      if (authNormalizeName(preAccounts[pi].fullName) === authNormalizeName(preName) && isAccountShadowBanned(preAccounts[pi].id)) {
+        d.authLoginError.textContent = "Вход невозможен: эта учётная запись в теневом бане. Бан снимается только через настройки.";
+        return;
+      }
+    }
+  }
   var name = d.authLoginName.value.trim(), pass = d.authLoginPass.value;
   if (!name || !pass) { d.authLoginError.textContent = "Введите имя с фамилией и пароль."; return; }
   var methodEl = document.querySelector('input[name="auth2faMethod"]:checked');
@@ -1184,7 +1517,26 @@ async function handleAuthLogin(event) {
     d.authLoginSubmit.disabled = true; d.authLoginSubmit.textContent = "Проверяем…";
     try {
       var derived = await authDerive(pass, account.salt);
-      if (derived !== account.hash) { d.authLoginError.textContent = "Неверный пароль."; d.authLoginPass.value = ""; d.authLoginPass.focus(); return; }
+      if (derived !== account.hash) {
+        // Five consecutive wrong passwords ban this account (shadow ban,
+        // liftable only from the settings panel). The IP lookup runs in the
+        // background so the freeze-free UX stays intact; the cached address
+        // lets the admin see which network the attempts came from.
+        var pwFails = getAuthFails() + 1;
+        setAuthFails(pwFails);
+        fetchPublicIp().catch(function () {});
+        if (pwFails >= AUTH_MAX_FAILED_PASSWORD_ATTEMPTS) {
+          setAccountShadowBan(account.id, true, account.fullName);
+          setAuthFails(0);
+          d.authLoginError.textContent = "Слишком много неверных попыток: аккаунт отправлен в теневой бан.";
+          d.authLoginPass.value = "";
+          showToast("Аккаунт «" + account.fullName + "» в теневом бане.", "warning");
+          return;
+        }
+        d.authLoginError.textContent = "Неверный пароль. Осталось попыток: " + (AUTH_MAX_FAILED_PASSWORD_ATTEMPTS - pwFails) + ".";
+        d.authLoginPass.value = ""; d.authLoginPass.focus(); return;
+      }
+      setAuthFails(0);
     } catch (error) { d.authLoginError.textContent = error.message || "Ошибка проверки пароля."; return; }
     finally { d.authLoginSubmit.disabled = false; d.authLoginSubmit.textContent = "Войти"; }
     // Password OK → move to the second factor. Remember salt/hash so step 2
@@ -1250,6 +1602,8 @@ async function handleAuthLogin(event) {
     }
   }
   d.authLoginForm.reset(); updateAuth2faStep();
+  setAuthFails(0); // successful login clears the password-failure counter
+  enforceIpBanOnLogin(); // an IP ban issued from another device applies right away
   closeAuthGate(); lastFlushDaysSig = null; lastHomeworkSig = null; lastAccountSig = null; render(); applyRoleRestrictions();
   showToast("С возвращением, " + account.fullName + "! Вход подтверждён.", "success");
 }
@@ -1499,7 +1853,7 @@ function flushRender() {
     if (studentAddMode === "registered") populateStudentAccountSelect();
   }
   dom.versionButtonText.textContent = state.settings.versionText; dom.versionButton.setAttribute("aria-label", state.settings.versionText + ". Открыть настройки по коду"); if (dom.journalEdition) dom.journalEdition.textContent = settingsVersionText();
-  renderNews(); renderMaintenance();
+  renderNews(); renderMaintenance(); refreshSystemText();
   // Homework panel: rebuild only when its data actually changed.
   var hwSigReal = (state.homework || []).map(function (h) { return h.id + ":" + (h.deleted ? 1 : 0) + ":" + String(h.text || "") + ":" + (h.dueDate || "") + ":" + (h.classId || ""); }).join("#") + "|" + state.selectedClass + "|" + syncReadOnly();
   if (hwSigReal !== lastHomeworkSig) { lastHomeworkSig = hwSigReal; renderHomework(); }
@@ -1577,6 +1931,20 @@ function renderUserList() {
     remove.disabled = !canManage;
     remove.title = canManage ? "Удалить этот аккаунт с устройства" : "Удалять аккаунты могут только учитель или тех. администрация";
     row.appendChild(remove);
+    // Manual shadow-ban toggle for this account — available ONLY from the
+    // settings panel (the dev panel is reachable solely after the code entry).
+    var bannedNow = isAccountShadowBanned(account.id);
+    row.dataset.banned = bannedNow ? "1" : "";
+    var banBtn = document.createElement("button"); banBtn.type = "button";
+    banBtn.className = bannedNow ? "secondary user-shadow-unban" : "danger user-shadow-ban";
+    banBtn.dataset.accountId = account.id;
+    banBtn.textContent = bannedNow ? "Снять бан" : "Теневой бан";
+    banBtn.title = bannedNow ? "Снять теневой бан с этого аккаунта" : "Отправить этот аккаунт в теневой бан";
+    row.appendChild(banBtn);
+    if (bannedNow) {
+      var flag = document.createElement("span"); flag.className = "device-badge shadow-ban-flag"; flag.textContent = "теневой бан";
+      info.insertBefore(flag, name.nextSibling);
+    }
     container.appendChild(row);
   });
 }
@@ -1721,6 +2089,8 @@ function scheduleSearchRender() {
 }
 function refreshDevPanel() {
   dom.devVersionTextInput.value = state.settings.versionText; dom.devMaintenanceMessageInput.value = state.settings.maintenanceMessage; dom.devNewsInput.value = state.settings.news;
+  if (dom.devSystemTextInput) dom.devSystemTextInput.value = state.settings.systemText || "";
+  renderShadowBanList(); wireShadowBanList(); wireShadowBanControls();
   dom.devToggleMaintenanceButton.textContent = state.settings.maintenance ? "Завершить обслуживание" : "Включить экран обслуживания";
   dom.devToggleMaintenanceButton.className = state.settings.maintenance ? "danger" : "secondary";
   renderDeviceList();
@@ -1821,6 +2191,8 @@ function wireCoreEvents() {
   dom.devResetMaintenanceMessageButton.addEventListener("click", function () { updateSettings({ maintenanceMessage: DEFAULT_MAINTENANCE_MSG }); refreshDevPanel(); });
   dom.devSaveNewsButton.addEventListener("click", function () { updateSettings({ news: dom.devNewsInput.value.trim().slice(0, 4000) }); try { if (storage) storage.removeItem(NEWS_DISMISS_KEY); } catch (e) {} renderNews(); showToast("Объявление сохранено", "success"); });
   dom.devClearNewsButton.addEventListener("click", function () { updateSettings({ news: "" }); refreshDevPanel(); });
+  if (dom.devSaveSystemTextButton) dom.devSaveSystemTextButton.addEventListener("click", function () { var text = (dom.devSystemTextInput ? dom.devSystemTextInput.value : "").trim().slice(0, 200); updateSettings({ systemText: text }); refreshSystemText(); showToast(text ? "Системный текст сохранён" : "Системный текст очищен", "success"); });
+  if (dom.devResetSystemTextButton) dom.devResetSystemTextButton.addEventListener("click", function () { updateSettings({ systemText: "" }); if (dom.devSystemTextInput) dom.devSystemTextInput.value = ""; refreshSystemText(); showToast("Системный текст сброшен к стандартному", "info"); });
   if (dom.devClearAllButton) dom.devClearAllButton.addEventListener("click", clearAllJournalData);
   if (dom.refreshUserListButton) dom.refreshUserListButton.addEventListener("click", function () { renderUserList(); showToast("Список пользователей обновлён", "info"); });
   if (dom.userList) dom.userList.addEventListener("click", function (e) {
@@ -2005,7 +2377,22 @@ function openPasswordModal() {
 function closePasswordModal() { dom.settingsPasswordInput.value = ""; dom.settingsPasswordError.textContent = ""; closeModal(); }
 function submitSettingsCode(event) {
   event.preventDefault();
-  if (dom.settingsPasswordInput.value !== SETTINGS_ACCESS_CODE) { dom.settingsPasswordError.textContent = "Неверный код. Попробуйте ещё раз."; dom.settingsPasswordInput.setAttribute("aria-invalid", "true"); dom.settingsPasswordInput.value = ""; dom.settingsPasswordInput.focus(); return; }
+  if (dom.settingsPasswordInput.value !== SETTINGS_ACCESS_CODE) {
+    // Count every miss; the 5th consecutive wrong code drops this device into
+    // a shadow ban (read-only journal, gray system notice on the main screen).
+    var fails = getCodeFails() + 1;
+    setCodeFails(fails);
+    dom.settingsPasswordInput.value = ""; dom.settingsPasswordInput.setAttribute("aria-invalid", "true");
+    if (fails >= SETTINGS_MAX_FAILED_CODE_ATTEMPTS) {
+      applyShadowBan("5 неверных попыток ввода кода настроек");
+      closePasswordModal();
+      return;
+    }
+    dom.settingsPasswordError.textContent = "Неверный код. Осталось попыток: " + (SETTINGS_MAX_FAILED_CODE_ATTEMPTS - fails) + ".";
+    dom.settingsPasswordInput.focus();
+    return;
+  }
+  setCodeFails(0); // a correct entry clears the failure counter
   closePasswordModal(); state.devUnlocked = true;
   // The unlock survives tab closures until "Выйти из настроек" is pressed.
   try { if (storage) { storage.setItem(SETTINGS_UNLOCK_KEY, "1"); storage.setItem(SETTINGS_CODE_SET_KEY, String(Date.now())); } } catch (error) {}
@@ -2613,7 +3000,7 @@ function loadInterval() {
     var raw = storage && storage.getItem(INTERVAL_KEY);
     // A missing key means "never chosen by the user" -> apply the current
     // default (15 s). An explicit "0" (manual mode) must stay manual.
-    var interval = raw === null || raw === undefined || String(raw).trim() === "" ? DEFAULT_POLL_INTERVAL_MS : Number(raw);
+    var interval = raw === null || raw === undefined || String(raw).trim() === "" ? (isWideTouchDevice() ? TABLET_POLL_INTERVAL_MS : DEFAULT_POLL_INTERVAL_MS) : Number(raw);
     // Upgrade the former defaults once; manual mode and other choices survive.
     // v32 migrated 30 s -> 5 s; that 5 s cadence proved too heavy for phones
     // (constant network + re-render churn), so v34 upgrades it to 15 s.
@@ -2643,6 +3030,15 @@ function loadInterval() {
         storage.setItem(INTERVAL_KEY, String(interval));
       }
       storage.setItem("attendance_sync_speed_v36","1");
+    }
+    // v37: dedicated tablet pass. Wide touch devices get the calm 5-minute
+    // cadence once (their browsers throttle background timers anyway, so the
+    // extra network + merge churn between taps was pure jank). Phones and PCs
+    // keep the standard pace; an explicit user choice is never touched again.
+    if (isWideTouchDevice() && storage && !storage.getItem("attendance_sync_speed_tablet_v37")) {
+      var tabletMigrated = tabletPaceUpgrade(migratePollInterval(interval));
+      if (tabletMigrated !== interval) { interval = tabletMigrated; storage.setItem(INTERVAL_KEY, String(interval)); }
+      storage.setItem("attendance_sync_speed_tablet_v37", "1");
     }
     if ([0, 5000, 15000, 30000, 60000, 300000].indexOf(interval) !== -1) syncRuntime.pollIntervalMs = interval;
   } catch (error) {}
@@ -3048,7 +3444,7 @@ function scheduleSync() {
   syncRuntime.pushTimer = setTimeout(function () {
     syncRuntime.pushTimer = null;
     if (generation === syncRuntime.generation && syncAutomatic()) fullSync("auto");
-  }, typeof PUSH_DEBOUNCE_MS === "number" ? PUSH_DEBOUNCE_MS : 2500);
+  }, (typeof PUSH_DEBOUNCE_MS === "number" ? PUSH_DEBOUNCE_MS : 2500) + (isWideTouchDevice() ? TABLET_PUSH_DEBOUNCE_MS - PUSH_DEBOUNCE_MS : 0));
 }
 function syncWithDeviceLock(config, callback) {
   if (navigator.locks && typeof navigator.locks.request === "function") {
@@ -3553,6 +3949,8 @@ function wireAppUpdates(){
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+// Test/debug handle: exposes the app's global scope to jsdom-based smoke tests.
+window.__journalApp = { get state() { return state; }, dom: dom, refreshDevPanel: refreshDevPanel, isValidIpv4: isValidIpv4, loadDeviceShadowBans: loadDeviceShadowBans, loadAccountShadowBans: loadAccountShadowBans, setCodeFails: setCodeFails, getShadowBan: getShadowBan, checkShadowBanned: isShadowBanned, submitSettingsCode: submitSettingsCode, effectivePermissions: effectivePermissions, liftShadowBan: liftShadowBan, loadAuthAccounts: loadAuthAccounts, saveAuthAccounts: saveAuthAccounts, renderUserList: renderUserList, isAccountShadowBanned: isAccountShadowBanned, setAccountShadowBan: setAccountShadowBan };
 
 /* Full wipe implementation (project layer): marks every student, lesson and
    homework record as deleted across ALL classes, resets all attendance and
