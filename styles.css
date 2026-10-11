@@ -3685,3 +3685,28 @@ html[data-theme="light"] .system-text-line{color:#8a8f98}
 .shadow-ban-flag{background:#4b5563!important;color:#fff!important;border-radius:999px;padding:2px 8px;margin-left:8px;font-size:11px;font-weight:600}
 #shadowBanCurrentIp{align-self:center}
 .row-actions input[type="text"]{flex:1;min-width:160px}
+
+/* ==========================================================================
+   Ban screen (экран бана): full-screen notice on a shadow-banned device.
+   Cannot be collapsed or dismissed — it closes only when the ban is lifted.
+   Shows: device info, ban reason, issuer (tech worker / automatic), public
+   IP, issue date and the technical text.
+   ========================================================================== */
+.ban-overlay { position: fixed; inset: 0; z-index: 9500; display: flex; align-items: center; justify-content: center; padding: 24px; overflow-y: auto; background: linear-gradient(135deg, #1c1010 0%, #3a1414 50%, #0d0606 100%); color: #fff; text-align: left; }
+.ban-overlay[hidden] { display: none; }
+.ban-overlay::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 25% 20%, rgba(220,38,38,.14), transparent 50%), radial-gradient(circle at 75% 80%, rgba(153,27,27,.14), transparent 50%); pointer-events: none; }
+@media (prefers-color-scheme: dark) { .ban-overlay { background: linear-gradient(135deg, #14090b 0%, #2c0f12 50%, #090405 100%); } }
+html[data-theme="dark"] .ban-overlay { background: linear-gradient(135deg, #14090b 0%, #2c0f12 50%, #090405 100%); }
+.ban-content { max-width: 560px; width: 100%; margin: auto; padding: 32px 26px; position: relative; background: rgba(20,10,10,.72); border: 1px solid rgba(248,113,113,.28); border-radius: 24px; box-shadow: 0 30px 90px rgba(0,0,0,.55); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+.ban-icon { font-size: 54px; line-height: 1; text-align: center; margin-bottom: 10px; filter: drop-shadow(0 2px 10px rgba(220,38,38,.5)); }
+.ban-content h2 { margin: 0 0 6px; text-align: center; color: #fecaca; font-size: 24px; }
+.ban-intro { margin: 0 0 18px; text-align: center; color: #e7c9c9; font-size: 14px; line-height: 1.45; }
+.ban-info { margin: 0 0 18px; display: grid; gap: 8px; }
+.ban-info-row { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; padding: 9px 14px; background: rgba(30,14,14,.65); border: 1px solid rgba(248,113,113,.16); border-radius: 12px; }
+.ban-info-row dt { font-size: 12px; letter-spacing: .03em; text-transform: uppercase; color: #d4a3a3; flex: 0 0 auto; }
+.ban-info-row dd { margin: 0; font-size: 14px; color: #fff; text-align: right; overflow-wrap: anywhere; }
+.ban-tech-text-wrap { padding: 14px 16px; background: rgba(0,0,0,.35); border: 1px dashed rgba(248,113,113,.35); border-radius: 14px; }
+.ban-tech-text-wrap h3 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: #fca5a5; }
+.ban-tech-text { margin: 0; font-size: 14.5px; line-height: 1.5; color: #f3dede; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 520px) { .ban-content { padding: 24px 16px; } .ban-info-row { flex-direction: column; gap: 2px; } .ban-info-row dd { text-align: left; } }
+@media print { .ban-overlay { display: none !important; } }
