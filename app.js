@@ -2009,10 +2009,25 @@ var renderScheduled = false, renderOfflineScheduled = false;
 // On low-end phones the full pipeline per click rebuilt homework/offline/
 // account DOM every frame even when nothing in them had changed.
 var lastFlushDaysSig = null, lastHomeworkSig = null, lastAccountSig = null;
+// Journal-content signature: students, marks and settings. The old table cache
+// (lastTableSignature) already detects status changes, but the OUTER skip in
+// flushRender compared only navigation inputs (view/date/month/class/search).
+// After a mark was set those inputs were unchanged, so the whole journal block
+// was skipped before renderBody could patch the cell — the mark lived in
+// state.attendance but never appeared on screen until a page reload. Including
+// this signature makes every data mutation invalidate the skip.
+function journalContentSignature() {
+  var parts = [(state.students || []).length];
+  Object.keys(state.attendance).forEach(function (k) {
+    var v = normalizeStatusEntry(state.attendance[k]);
+    parts.push(k + ":" + (v ? v.status : "u") + ":" + (v ? v.updatedAt : 0));
+  });
+  return parts.join(",");
+}
 function flushRender() {
   renderScheduled = false;
   var focused = document.activeElement, days = getDisplayedDays();
-  var daysSig = state.viewMode + "|" + state.selectedDate + "|" + state.selectedMonth + "|" + state.selectedClass + "|" + state.searchQuery;
+  var daysSig = state.viewMode + "|" + state.selectedDate + "|" + state.selectedMonth + "|" + state.selectedClass + "|" + state.searchQuery + "|" + journalContentSignature();
   if (daysSig !== lastFlushDaysSig || !dom.tableBody.rows.length) {
     lastFlushDaysSig = daysSig;
     renderViewControls(days); dom.printMonthTitle.textContent = dom.monthTitle.textContent;
