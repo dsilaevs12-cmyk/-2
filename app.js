@@ -1873,16 +1873,24 @@ function scheduleEchoPolls() {
   if (!syncConfigured()) return;
   clearEchoPolls();
   var generation = syncRuntime.generation;
-  [1200, 3500, 8000].forEach(function (delay) {
-    syncRuntime.echoTimers.push(setTimeout(function () {
-      syncRuntime.echoTimers = [];
+  // Deliberately spaced far AFTER the push: api.github.com serves gist file
+  // content through a CDN that may answer with a stale snapshot for up to a
+  // minute after another device's PATCH. Pulls fired at 1-8 s routinely read
+  // the pre-mark revision and applied nothing — which is exactly the
+  // "отметки появляются только после перезагрузки страницы" symptom (a reload
+  // happens minutes later, when the CDN cache has expired). The first pull at
+  // ~75 s lands outside that grace window; later pulls cover slow writers.
+  [75000, 160000, 310000].forEach(function (delay) {
+    var timer = setTimeout(function () {
+      syncRuntime.echoTimers = syncRuntime.echoTimers.filter(function (t) { return t !== timer; });
       if (generation !== syncRuntime.generation) return;
       if (syncRuntime.isSyncing || syncRuntime.retryTimer || syncRuntime.blocked) return;
       if (!syncOnline() || document.hidden) return;
       // Read-only connections cannot push, but they must still see marks made
       // elsewhere quickly — the "echo" pull refreshes the Gist for them too.
       fullSync("echo");
-    }, delay));
+    }, delay);
+    syncRuntime.echoTimers.push(timer);
   });
 }
 function clearEchoPolls() {
@@ -3643,10 +3651,22 @@ function scheduleSync() {
   if (!syncAutomatic()) return;
   clearTimeout(syncRuntime.pushTimer);
   var generation = syncRuntime.generation;
+  // Fire the first push immediately when the last upload finished more than a
+  // debounce window ago (idle device making a fresh mark). Previously every
+  // single mark waited out the full 2.5-4 s debounce, and on GitHub Gist the
+  // raw file content behind api.github.com is served through Fastly's CDN with
+  // a stale-cache grace period: a pull arriving within ~1 minute of the PATCH
+  // could still return the OLD snapshot. Pushing early moves the upload away
+  // from the echo pulls (75/160/310 s later), so those pulls read a revision
+  // that was written well before the CDN grace window — marks made on one
+  // device now appear on the others without a page reload.
+  var sinceLastPush = Date.now() - (syncRuntime.lastPushedAt || 0);
+  var debounceMs = (typeof PUSH_DEBOUNCE_MS === "number" ? PUSH_DEBOUNCE_MS : 2500) + (isWideTouchDevice() ? TABLET_PUSH_DEBOUNCE_MS - PUSH_DEBOUNCE_MS : 0);
+  var delay = sinceLastPush >= debounceMs ? 0 : debounceMs - sinceLastPush;
   syncRuntime.pushTimer = setTimeout(function () {
     syncRuntime.pushTimer = null;
     if (generation === syncRuntime.generation && syncAutomatic()) fullSync("auto");
-  }, (typeof PUSH_DEBOUNCE_MS === "number" ? PUSH_DEBOUNCE_MS : 2500) + (isWideTouchDevice() ? TABLET_PUSH_DEBOUNCE_MS - PUSH_DEBOUNCE_MS : 0));
+  }, delay);
 }
 function syncWithDeviceLock(config, callback) {
   if (navigator.locks && typeof navigator.locks.request === "function") {
@@ -3905,6 +3925,24 @@ async function syncRun(reason, polling) {
       }
       syncRuntime.lastPullAt = Date.now();
       acknowledgeQueue(sentQueue); syncSuccess(reason, sentRevision); syncRuntime.remoteApplied = !requiresPush;
+      // Tail echo: schedule one more cache-busting pull shortly after this
+      // cycle. If another device pushed while we were syncing (or the CDN
+      // still served a stale snapshot to the pull above), this follow-up
+      // catches its marks within about a minute — without waiting out the
+      // regular poll interval (up to 5 minutes on tablets) and without a
+      // page reload. Only scheduled when something might actually be new:
+      // we just uploaded, or the last pull saw remote changes.
+      if (!syncRuntime.blocked && (requiresPush || syncRuntime.lastReceivedAt > syncRuntime.lastPullAt - 60000)) {
+        var tailGeneration = syncRuntime.generation;
+        var tailTimer = setTimeout(function () {
+          syncRuntime.echoTimers = syncRuntime.echoTimers.filter(function (t) { return t !== tailTimer; });
+          if (tailGeneration !== syncRuntime.generation) return;
+          if (syncRuntime.isSyncing || syncRuntime.retryTimer || syncRuntime.blocked) return;
+          if (!syncOnline() || document.hidden) return;
+          fullSync("echo");
+        }, 35000);
+        syncRuntime.echoTimers.push(tailTimer);
+      }
       // Accounts ride along with every successful journal cycle: upload this
       // device's list, merge all accounts.device.*.json files from the Gist
       // and apply the result locally (see "Account sync" section).
@@ -4144,7 +4182,7 @@ syncListen(dom.syncQuickButton,"click",function(){
 window.addEventListener("focus",function(){if((syncAutomatic()||syncReadOnly())&&Date.now()-syncRuntime.lastPullAt>2000)pollOnce();});
 
 /* Relative URLs work both on user.github.io and user.github.io/repository/. */
-var APP_VERSION = '3.3.3', APP_BUILD_ID = 'c2d8f1a6be739045'; // 3.3.3: tech text block on ban screen darker and crisper
+var APP_VERSION = '3.3.4', APP_BUILD_ID = 'f91b6d3ac08e5742'; // 3.3.4: instant push after idle + echo pulls past the GitHub CDN stale-cache window (marks sync without page reload)
 var appUpdateRuntime = { checkedAt: 0, busy: false, available: '' };
 async function checkAppUpdate(){
   if(!/^https?:$/.test(window.location.protocol)||!syncOnline()||document.hidden||appUpdateRuntime.busy||Date.now()-appUpdateRuntime.checkedAt<300000)return;
