@@ -1041,7 +1041,7 @@ function mergeSettings(local, remote) {
 function mergeData(local, remote) { return { version: 5, students: mergeStudents(local.students, remote.students), attendance: mergeAttendance(local.attendance, remote.attendance), settings: mergeSettings(local.settings, remote.settings) }; }
 function buildPayload() { return copy({ version: 5, students: state.students, attendance: state.attendance, settings: state.settings }); }
 function applyMergedToState(data) { state.students = copy(data.students); state.attendance = copy(data.attendance); state.settings = cloneSettings(data.settings); if (Array.isArray(data.homework)) state.homework = data.homework.map(function (v) { return Object.assign({}, v); }); }
-function markChanged() { state.revision++; syncRuntime.hasPendingChanges = true; }
+function markChanged() { state.revision++; syncRuntime.hasPendingChanges = true; syncRuntime.lastLocalMutationAt = Date.now(); }
 // Coalesce rapid localStorage writes (e.g. tapping several cells quickly).
 // The leading-edge timer fires within 150ms so data is never at risk for long,
 // and beforeunload flushes anything pending synchronously.
@@ -1860,7 +1860,34 @@ function setAttendanceStatus(status) {
   // modal backdrop was still on screen; browsers skipped repainting cells that
   // sat under the hidden backdrop, so a fresh mark only became visible after a
   // page reload. Now the patched cell is guaranteed to repaint immediately.
+  syncRuntime.lastLocalMutationAt = Date.now();
   markChanged(["attendance/"+key]); closeAttendanceModal(); renderNow(); scheduleSaveLocal(); scheduleSync();
+}
+// Fast "echo" polling after a local change. The regular poll interval can be
+// as long as 5 minutes (tablet default), so without this the mark the user
+// just made — or one made on another device seconds ago — only appeared after
+// a manual page reload. After every local mutation we pull unconditionally a
+// few times in quick succession, which makes marks show up almost instantly
+// on all open devices.
+function scheduleEchoPolls() {
+  if (!syncConfigured()) return;
+  clearEchoPolls();
+  var generation = syncRuntime.generation;
+  [1200, 3500, 8000].forEach(function (delay) {
+    syncRuntime.echoTimers.push(setTimeout(function () {
+      syncRuntime.echoTimers = [];
+      if (generation !== syncRuntime.generation) return;
+      if (syncRuntime.isSyncing || syncRuntime.retryTimer || syncRuntime.blocked) return;
+      if (!syncOnline() || document.hidden) return;
+      // Read-only connections cannot push, but they must still see marks made
+      // elsewhere quickly — the "echo" pull refreshes the Gist for them too.
+      fullSync("echo");
+    }, delay));
+  });
+}
+function clearEchoPolls() {
+  (syncRuntime.echoTimers || []).forEach(clearTimeout);
+  syncRuntime.echoTimers = [];
 }
 function changeMonth(offset) { var d = parseMonth(state.selectedMonth); d.setMonth(d.getMonth() + offset); if (d.getFullYear() < 1000 || d.getFullYear() > 9999) return; state.selectedMonth = getMonthString(d); state.selectedDate = formatDateKey(d); render(); }
 function element(tag, className, text) { var el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; }
@@ -3054,7 +3081,7 @@ var syncRuntime = {
   etag: null, cachedRemote: null, cachedHasFiles: false, cachedFiles: {}, remoteApplied: false,
   retryAt: 0, blocked: false, lastReceivedAt: 0, lastReceivedCount: 0,
   pollIntervalMs: DEFAULT_POLL_INTERVAL_MS, consecutiveErrors: 0,
-  lastPullAt: 0, lastPushedAt: 0, generation: 0,
+  lastPullAt: 0, lastPushedAt: 0, lastLocalMutationAt: 0, echoTimers: [], generation: 0,
   activeOperation: null, operationCounter: 0, controllers: new Set(),
   tabWriterId: generateId().replace(/[^a-zA-Z0-9_-]/g, "")
 };
@@ -3100,6 +3127,7 @@ function syncCheckGeneration(config) {
 function syncInvalidate() {
   syncRuntime.generation++;
   clearTimeout(syncRuntime.pushTimer); clearTimeout(syncRuntime.retryTimer);
+  clearEchoPolls();
   syncRuntime.pushTimer = null; syncRuntime.retryTimer = null;
   stopPolling();
   syncRuntime.controllers.forEach(function (controller) { controller.abort(); });
@@ -3441,6 +3469,9 @@ async function fetchFromGist(config, options) {
       syncRuntime.cachedFiles = anonNextFiles; syncRuntime.cachedSources = anonSources;
       syncRuntime.etag = null; syncRuntime.cachedRemote = anonResult.data; syncRuntime.cachedHasFiles = anonResult.hasFiles;
       if (!anonUnchanged) syncRuntime.remoteApplied = false;
+    } else if (syncRuntime.cachedFiles && Object.keys(syncRuntime.cachedFiles).length) {
+      // Keep the per-file cache fresh after noCache reads (see token branch).
+      syncRuntime.cachedFiles = anonNextFiles;
     }
     if (config.gistId === syncConfig.gistId && !syncConfig.isPublicGist) { syncConfig.isPublicGist = true; saveSyncConfig(); }
     return anonResult;
@@ -3491,6 +3522,13 @@ async function fetchFromGist(config, options) {
     syncRuntime.cachedFiles = nextFiles; syncRuntime.cachedSources = sources;
     syncRuntime.etag = result.etag; syncRuntime.cachedRemote = result.data; syncRuntime.cachedHasFiles = result.hasFiles;
     if (!unchanged) syncRuntime.remoteApplied = false;
+  } else if (syncRuntime.cachedFiles && Object.keys(syncRuntime.cachedFiles).length) {
+    // noCache reads (connection tests, echo pulls) must not leave stale
+    // per-file caches behind: the very next regular poll would then reuse an
+    // old cached file content for any device whose fingerprint happened to
+    // match, so fresh marks could stay invisible until a page reload. Store
+    // the freshly read fingerprints instead — they are guaranteed current.
+    syncRuntime.cachedFiles = nextFiles;
   }
   return result;
 }
@@ -3598,6 +3636,10 @@ function scheduleSync() {
   if (syncRuntime.blocked && !Object.keys(offline.conflicts).length && syncConfig.lastError.indexOf("конфликт") !== -1) syncRuntime.blocked = false;
   syncRuntime.hasPendingChanges = syncRuntime.hasPendingChanges || state.revision > state.lastSyncedRevision;
   updateSyncUI();
+  // Echo polls must run even when automatic push is disabled (interval "off"
+  // or read-only public-Gist mode): the user still expects marks made on other
+  // devices to appear without reloading the page.
+  if (Date.now() - syncRuntime.lastLocalMutationAt < 30000) scheduleEchoPolls();
   if (!syncAutomatic()) return;
   clearTimeout(syncRuntime.pushTimer);
   var generation = syncRuntime.generation;
@@ -3783,11 +3825,17 @@ function syncError(error, reason) {
   if (reason === "manual") showToast(syncConfig.lastError, "error");
 }
 async function syncRun(reason, polling) {
-  if (!syncConfigured() || (reason !== "manual" && !syncAutomatic())) return;
+  if (!syncConfigured()) return;
+  if (reason === "manual") { syncRuntime.blocked = false; clearTimeout(syncRuntime.retryTimer); syncRuntime.retryTimer = null; syncRuntime.retryAt = 0; }
+  // "auto" normally means the regular poller. Echo pulls fired right after a
+  // local mutation must bypass the automatic-mode gate (interval "off") and
+  // the shared cachedRemote, otherwise the mark just made on another device
+  // is served from cache and never appears without a page reload.
+  var echoPull = reason === "echo";
+  if (!echoPull && reason !== "manual" && !syncAutomatic()) return;
   if (syncRuntime.isSyncing) { if (!polling) syncRuntime.pendingSync = true; return; }
   if (syncRuntime.retryAt > Date.now()) { if (reason === "manual") showToast(syncConfig.lastError, "warning"); return; }
   if (reason !== "manual" && syncRuntime.blocked) return;
-  if (reason === "manual") { syncRuntime.blocked = false; clearTimeout(syncRuntime.retryTimer); syncRuntime.retryTimer = null; syncRuntime.retryAt = 0; }
   if (!syncOnline()) { updateSyncUI(); return; }
   // Read-only connections never upload, so a failed fetch must not leave the
   // UI stuck in "error" state: local data is intact and the next poll retries
@@ -3804,7 +3852,9 @@ async function syncRun(reason, polling) {
   updateSyncUI();
   try {
     await syncWithDeviceLock(config, async function () {
-      var remote = await fetchFromGist(config);
+      // Echo pulls bypass the ETag/cached-remote shortcut so a mark made on
+      // another device seconds ago is actually fetched and applied.
+      var remote = await fetchFromGist(config, { unconditional: echoPull, noCache: echoPull });
       syncCheckGeneration(config);
       // Another tab may have changed localStorage while this tab waited for its
       // lock or for the network. Merge it before constructing a sent snapshot.
@@ -4033,6 +4083,21 @@ syncListen(dom.intervalSelect, "change", function (event) {
 document.addEventListener("visibilitychange", function () { if (!document.hidden && (syncAutomatic() || syncReadOnly())) pollOnce(); });
 window.addEventListener("online", function () { updateSyncUI(); if (syncAutomatic() || syncReadOnly()) fullSync("auto"); });
 window.addEventListener("offline", updateSyncUI);
+// Cross-tab realtime: when another tab on the SAME device writes the journal,
+// a "storage" event fires in every other tab. Without this, two tabs only saw
+// each other's marks after a reload or the next slow poll.
+window.addEventListener("storage", function (e) {
+  try {
+    if (e.key !== STORAGE_KEY || !e.newValue) return;
+    var disk = JSON.parse(e.newValue);
+    if (!disk || typeof disk !== "object") return;
+    // Apply immediately so the table repaints without waiting for the network.
+    if (loadLocal()) renderNow();
+    // If this tab also has unsent edits, push them right away instead of
+    // waiting out the debounce window.
+    if (syncWritable() && (state.revision > state.lastSyncedRevision || syncRuntime.hasPendingChanges)) scheduleSync();
+  } catch (error) {}
+});
 
 
 // Always visible connection status; incoming notices survive subsequent no-op polls.
