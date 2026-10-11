@@ -370,25 +370,41 @@ function wireShadowBanControls() {
 // every device shows the same line. While the device sits in a shadow ban the
 // ban notice replaces it (the ban itself is device-local and must not leak
 // into the shared settings).
-function systemTextValue() {
-  var t = String(state.settings.systemText || "").trim();
-  if (t) return t;
-  if (DEFAULT_SYSTEM_TEXT) return DEFAULT_SYSTEM_TEXT;
-  return "";
+// The system text may contain several lines separated by newlines: every line
+// is rendered on its own row under the header (Enter in the settings field
+// starts a new line instead of running the previous one off to the edge).
+function normalizeSystemText(raw) {
+  return String(raw == null ? "" : raw)
+    .replace(/\r\n?/g, "\n") // CRLF / CR -> LF so saving from any device works
+    .split("\n").map(function (l) { return l.replace(/[ \t]+/g, " ").trim(); })
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n") // collapse excessive blank lines
+    .replace(/^\n+|\n+$/g, "")
+    .slice(0, 600);
 }
-function composeSystemText() {
+function systemTextLines() {
+  var t = normalizeSystemText(state.settings.systemText);
+  if (!t && DEFAULT_SYSTEM_TEXT) t = DEFAULT_SYSTEM_TEXT;
+  if (!t) return [];
+  return t.split("\n").filter(function (l) { return l.length > 0; });
+}
+function composeSystemTextLines() {
   if (isShadowBanned()) {
     var b = getShadowBan();
-    return "Системное уведомление: это устройство ограничено в настройках" + (b && b.reason ? " — " + b.reason : "") + ".";
+    return ["Системное уведомление: это устройство ограничено в настройках" + (b && b.reason ? " — " + b.reason : "") + "."];
   }
-  return systemTextValue();
+  return systemTextLines();
 }
 function refreshSystemText() {
   var el = dom.systemTextLine;
   if (!el) return;
-  var text = composeSystemText();
-  el.textContent = text;
-  el.hidden = !text;
+  var lines = composeSystemTextLines();
+  el.textContent = "";
+  lines.forEach(function (line, i) {
+    if (i) el.appendChild(document.createTextNode("\n"));
+    el.appendChild(document.createTextNode(line));
+  });
+  el.hidden = lines.length === 0;
 }
 
 var TOMBSTONE_RETENTION_MS = 180 * 24 * 60 * 60 * 1000; // half a year
@@ -668,7 +684,7 @@ function cloneSettings(s, strict) {
   result.maintenanceBy = validId(s.maintenanceBy) ? s.maintenanceBy : "";
   result.news = typeof s.news === "string" ? s.news.slice(0, 4000) : "";
   result.versionText = typeof s.versionText === "string" && s.versionText.trim() ? s.versionText.trim().slice(0, 60) : DEFAULT_VERSION_TEXT;
-  result.systemText = typeof s.systemText === "string" ? s.systemText.trim().slice(0, 200) : "";
+  result.systemText = typeof s.systemText === "string" ? normalizeSystemText(s.systemText) : "";
   result.updatedAt = timestamp(s.updatedAt, strict);
   settingFields.forEach(function (field) {
     var meta = s.fieldMeta && s.fieldMeta[field];
@@ -2191,7 +2207,7 @@ function wireCoreEvents() {
   dom.devResetMaintenanceMessageButton.addEventListener("click", function () { updateSettings({ maintenanceMessage: DEFAULT_MAINTENANCE_MSG }); refreshDevPanel(); });
   dom.devSaveNewsButton.addEventListener("click", function () { updateSettings({ news: dom.devNewsInput.value.trim().slice(0, 4000) }); try { if (storage) storage.removeItem(NEWS_DISMISS_KEY); } catch (e) {} renderNews(); showToast("Объявление сохранено", "success"); });
   dom.devClearNewsButton.addEventListener("click", function () { updateSettings({ news: "" }); refreshDevPanel(); });
-  if (dom.devSaveSystemTextButton) dom.devSaveSystemTextButton.addEventListener("click", function () { var text = (dom.devSystemTextInput ? dom.devSystemTextInput.value : "").trim().slice(0, 200); updateSettings({ systemText: text }); refreshSystemText(); showToast(text ? "Системный текст сохранён" : "Системный текст очищен", "success"); });
+  if (dom.devSaveSystemTextButton) dom.devSaveSystemTextButton.addEventListener("click", function () { var text = normalizeSystemText(dom.devSystemTextInput ? dom.devSystemTextInput.value : ""); updateSettings({ systemText: text }); if (dom.devSystemTextInput) dom.devSystemTextInput.value = text; refreshSystemText(); showToast(text ? "Системный текст сохранён" : "Системный текст очищен", "success"); });
   if (dom.devResetSystemTextButton) dom.devResetSystemTextButton.addEventListener("click", function () { updateSettings({ systemText: "" }); if (dom.devSystemTextInput) dom.devSystemTextInput.value = ""; refreshSystemText(); showToast("Системный текст сброшен к стандартному", "info"); });
   if (dom.devClearAllButton) dom.devClearAllButton.addEventListener("click", clearAllJournalData);
   if (dom.refreshUserListButton) dom.refreshUserListButton.addEventListener("click", function () { renderUserList(); showToast("Список пользователей обновлён", "info"); });

@@ -3676,7 +3676,7 @@ body:has(.modal-backdrop.open) .autumn-leaves span,
 body:has(.maintenance-overlay.open) .autumn-leaves span { animation-play-state: paused; }
 
 /* ---------- Gray system text line on the main screen ---------- */
-.system-text-line{margin:6px 0 0;font-size:12.5px;line-height:1.4;color:#8a8f98;letter-spacing:.01em;user-select:none}
+.system-text-line{margin:6px 0 0;font-size:12.5px;line-height:1.4;color:#8a8f98;letter-spacing:.01em;user-select:none;white-space:pre-wrap;overflow-wrap:anywhere}
 @media screen and (prefers-color-scheme:dark){.system-text-line{color:#7d838c}}
 html[data-theme="dark"] .system-text-line{color:#7d838c}
 html[data-theme="light"] .system-text-line{color:#8a8f98}
