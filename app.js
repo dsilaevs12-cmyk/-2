@@ -139,6 +139,13 @@ var PUBLIC_IP_TTL_MS = 60 * 60 * 1000;
 var SETTINGS_MAX_FAILED_CODE_ATTEMPTS = 5;
 var AUTH_MAX_FAILED_PASSWORD_ATTEMPTS = 5;
 var DEFAULT_SYSTEM_TEXT = "Учебный журнал посещаемости"; // gray line under the header when nothing custom is set
+// Technical text shown on the un-collapsible ban screen of a blocked device.
+// A tech worker can type it manually in settings or switch on auto-fill: with
+// auto-fill every newly issued ban (manual or automatic) carries this text
+// without further action. Stored per-device like the rest of the ban state.
+var BAN_TECH_TEXT_KEY = "attendance_ban_tech_text";
+var BAN_TECH_AUTO_KEY = "attendance_ban_tech_auto";
+var DEFAULT_BAN_TECH_TEXT = "Работа устройства приостановлена до выяснения обстоятельств. Обратитесь к техническому специалисту.";
 function getShadowBan() {
   try { var raw = storage && storage.getItem(SHADOW_BAN_KEY); return raw ? JSON.parse(raw) : null; }
   catch (error) { return null; }
@@ -160,14 +167,40 @@ function setCodeFails(n) { try { if (n <= 0) storage.removeItem(CODE_FAILS_KEY);
 function getAuthFails() { try { return Math.max(0, Number(storage && storage.getItem(AUTH_FAILS_KEY)) || 0); } catch (error) { return 0; } }
 function setAuthFails(n) { try { if (n <= 0) storage.removeItem(AUTH_FAILS_KEY); else storage.setItem(AUTH_FAILS_KEY, String(n)); } catch (error) {} }
 // Records a ban on this device only (settings-code lockout).
-function applyShadowBan(reason) {
+// `techBy` names the issuer shown on the ban screen: "автоматически" for the
+// code-lockout auto ban, "тех. работник" for a manual issue from settings.
+// When auto-fill of the technical text is enabled, the currently saved tech
+// text is attached to the ban record automatically; otherwise the ban screen
+// leaves the field empty until a tech worker fills it in manually.
+function applyShadowBan(reason, techBy) {
+  var rec = { at: Date.now(), reason: String(reason || "").slice(0, 200), by: String(techBy || "автоматически").slice(0, 80) };
+  if (getBanTechAuto()) rec.tech = getBanTechText();
   try {
-    storage.setItem(SHADOW_BAN_KEY, JSON.stringify({ at: Date.now(), reason: String(reason || "").slice(0, 200) }));
+    storage.setItem(SHADOW_BAN_KEY, JSON.stringify(rec));
   } catch (error) { return false; }
-  refreshSystemText(); renderMaintenance(); applyRoleRestrictions(); render();
+  refreshSystemText(); renderMaintenance(); renderBanScreen(); applyRoleRestrictions(); render();
   showToast("Устройство отправлено в теневой бан.", "warning");
   return true;
 }
+/* ---------- Technical text of the ban screen ---------- */
+function getBanTechText() {
+  try { var v = storage && storage.getItem(BAN_TECH_TEXT_KEY); return typeof v === "string" && v.trim() ? v.trim().slice(0, 1000) : DEFAULT_BAN_TECH_TEXT; }
+  catch (error) { return DEFAULT_BAN_TECH_TEXT; }
+}
+function setBanTechText(value) {
+  var clean = String(value == null ? "" : value).trim().slice(0, 1000);
+  try { if (clean) storage.setItem(BAN_TECH_TEXT_KEY, clean); else storage.removeItem(BAN_TECH_TEXT_KEY); } catch (error) {}
+  // A freshly typed text lands on the ban screen right away when the local
+  // ban carries no explicit technical text yet.
+  renderBanScreen();
+  return clean || DEFAULT_BAN_TECH_TEXT;
+}
+function getBanTechAuto() { try { return storage && storage.getItem(BAN_TECH_AUTO_KEY) === "1"; } catch (error) { return false; } }
+function setBanTechAuto(on) { try { if (on) storage.setItem(BAN_TECH_AUTO_KEY, "1"); else storage.removeItem(BAN_TECH_AUTO_KEY); } catch (error) {} }
+// Chooses the technical text for a newly issued ban: with auto-fill enabled
+// the stored (or default) text is inserted automatically; without it the
+// worker's message stays empty until someone types it in settings manually.
+function composeBanTechText() { return getBanTechAuto() ? getBanTechText() : ""; }
 // Lifts every layer of ban affecting this device: the local device flag, the
 // account entry and the IP entry (if the cached public IP matches).
 function liftShadowBan() {
@@ -179,7 +212,7 @@ function liftShadowBan() {
     if (ip) setDeviceShadowBan("ip:" + ip, false, "", true);
     if (deviceId) setDeviceShadowBan(deviceId, false, "", true);
   } catch (error) {}
-  refreshSystemText(); renderMaintenance(); applyRoleRestrictions(); render();
+  refreshSystemText(); renderMaintenance(); renderBanScreen(); applyRoleRestrictions(); render();
   renderShadowBanList();
   showToast("Теневой бан снят с этого устройства.", "success");
 }
@@ -191,10 +224,10 @@ function loadAccountShadowBans() {
 function saveAccountShadowBans(map) { try { if (storage) storage.setItem(ACCOUNT_SHADOW_BANS_KEY, JSON.stringify(map)); } catch (error) {} }
 function setAccountShadowBan(id, enabled, label, quiet) {
   var map = loadAccountShadowBans();
-  if (enabled) map[id] = { at: Date.now(), label: String(label || "").slice(0, 80) };
+  if (enabled) map[id] = { at: Date.now(), label: String(label || "").slice(0, 80), tech: composeBanTechText() };
   else delete map[id];
   saveAccountShadowBans(map);
-  if (!quiet) { renderShadowBanList(); refreshSystemText(); renderMaintenance(); applyRoleRestrictions(); render(); }
+  if (!quiet) { renderShadowBanList(); refreshSystemText(); renderMaintenance(); renderBanScreen(); applyRoleRestrictions(); render(); }
 }
 function isAccountShadowBanned(id) { return Boolean(loadAccountShadowBans()[id]); }
 // Global registry of banned devices / IP addresses ("ip:1.2.3.4" keys are
@@ -206,10 +239,10 @@ function loadDeviceShadowBans() {
 function saveDeviceShadowBans(map) { try { if (storage) storage.setItem(DEVICE_SHADOW_BANS_KEY, JSON.stringify(map)); } catch (error) {} }
 function setDeviceShadowBan(id, enabled, label, quiet) {
   var map = loadDeviceShadowBans();
-  if (enabled) map[id] = { at: Date.now(), label: String(label || "").slice(0, 80) };
+  if (enabled) map[id] = { at: Date.now(), label: String(label || "").slice(0, 80), tech: composeBanTechText() };
   else delete map[id];
   saveDeviceShadowBans(map);
-  if (!quiet) { renderShadowBanList(); refreshSystemText(); renderMaintenance(); applyRoleRestrictions(); render(); }
+  if (!quiet) { renderShadowBanList(); refreshSystemText(); renderMaintenance(); renderBanScreen(); applyRoleRestrictions(); render(); }
 }
 /* ---------- Public IP (for network-level shadow bans) ---------- */
 function getCachedPublicIp() {
@@ -238,6 +271,58 @@ function enforceIpBanOnLogin() {
   if (ip && loadDeviceShadowBans()["ip:" + ip] && !getShadowBan()) {
     applyShadowBan("Бан по IP-адресу " + ip);
   }
+}
+/* ---------- Full-screen ban notice (нельзя свернуть) ---------- */
+// While this device sits in a shadow ban, a modal-style screen covers the
+// whole app and cannot be collapsed or dismissed: it closes by itself the
+// moment the ban is lifted from the settings panel. It shows the device
+// identity (name + ID), the public IP address, the ban reason, who issued it
+// (a tech worker manually or the automatic code-lockout), the issue date and
+// the technical text composed by the technician (or filled automatically).
+function findActiveBanRecord() {
+  // Priority: the local device record carries the exact reason/date of THIS
+  // lockout; then the inherited account ban; then an IP / device-id ban.
+  var local = getShadowBan();
+  if (local) return Object.assign({ source: "self" }, local);
+  try {
+    var sess = currentAuthSession();
+    var accBans = loadAccountShadowBans();
+    if (sess && sess.accountId && accBans[sess.accountId]) return Object.assign({ source: "account" }, accBans[sess.accountId]);
+    var devBans = loadDeviceShadowBans();
+    var ip = getCachedPublicIp();
+    if (ip && devBans["ip:" + ip]) return Object.assign({ source: "ip" }, devBans["ip:" + ip]);
+    if (deviceId && devBans[deviceId]) return Object.assign({ source: "device" }, devBans[deviceId]);
+  } catch (error) {}
+  return null;
+}
+function banIssuerLabel(rec) {
+  if (!rec) return "";
+  if (rec.by) return rec.by;
+  var label = String(rec.label || "");
+  // Registry labels written by the settings actions name the issuer already.
+  if (/ручной|бан по ip/i.test(label)) return "тех. работник";
+  return "автоматически";
+}
+function renderBanScreen() {
+  var el = dom.banOverlay;
+  if (!el) return;
+  var banned = isShadowBanned();
+  // The auth gate owns the screen before login; the ban notice reappears
+  // right after the session opens (enforceIpBanOnLogin also re-issues it).
+  var show = banned && !shouldShowMaintenance() && !(dom.authGate && !dom.authGate.hidden);
+  el.hidden = !show;
+  document.body.style.overflow = show ? "hidden" : (activeModal ? "hidden" : "");
+  if (!show) return;
+  var rec = findActiveBanRecord() || {};
+  var meta = (state.deviceMeta || {})[deviceId] || {};
+  if (dom.banDeviceName) dom.banDeviceName.textContent = meta.name || "Это устройство";
+  if (dom.banDeviceId) dom.banDeviceId.textContent = deviceId || "не определён";
+  if (dom.banDeviceIp) dom.banDeviceIp.textContent = getCachedPublicIp() || "не определён";
+  if (dom.banReason) dom.banReason.textContent = rec.reason || rec.label || "Нарушение правил работы с журналом";
+  if (dom.banBy) dom.banBy.textContent = banIssuerLabel(rec) || "тех. работник";
+  if (dom.banDate) dom.banDate.textContent = rec.at ? new Date(rec.at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "дата не указана";
+  if (dom.banTechText) dom.banTechText.textContent = String(rec.tech || "").trim() || "Технический текст ещё не заполнен. Он появится здесь после того, как тех. работник внесёт его в настройках или включит автозаполнение.";
+  if (show && !el.dataset.focused) { el.dataset.focused = "1"; if (dom.banTitle) { dom.banTitle.setAttribute("tabindex", "-1"); dom.banTitle.focus({ preventScroll: true }); } }
 }
 function renderShadowBanList() {
   var wrap = document.getElementById("shadowBanList");
@@ -299,7 +384,7 @@ function banByIp(rawIp) {
 }
 function banThisDevice() {
   setDeviceShadowBan(deviceId || ("device:" + Date.now()), true, "Ручной бан устройства");
-  applyShadowBan("Бан выдан вручную из настроек");
+  applyShadowBan("Бан выдан вручную из настроек", "тех. работник");
   renderShadowBanList();
   showToast("Это устройство отправлено в теневой бан.", "success");
 }
@@ -421,7 +506,7 @@ var syncConfig = { enabled: false, token: "", gistId: "", isPublicGist: false, l
 var deviceId = "", logicalTime = 0, activeModal = null, previousFocus = null, modalStack = [];
 var attendanceModalState = { open: false, studentId: "", dateKey: "", currentStatus: STATUS_UNMARKED };
 var dom = {};
-["userList", "refreshUserListButton", "studentName", "addStudentButton", "monthPicker", "previousMonthButton", "nextMonthButton", "todayButton", "monthTitle", "tableHead", "tableBody", "emptyMessage", "searchInput", "clearSearchButton", "searchResultsInfo", "noSearchResults", "toast", "syncStatus", "syncStatusText", "toggleSyncConfigButton", "syncConfig", "githubToken", "gistId", "gistPublicCheckbox", "publicGistWarning", "saveSyncConfigButton", "testConnectionButton", "disableSyncButton", "syncNowButton", "forcePushButton", "forcePullButton", "debugButton", "refreshDebugButton", "copyDebugButton", "debugBlock", "debugPre", "intervalSelect", "newsBanner", "newsText", "newsCloseButton", "versionButton", "versionButtonText", "journalEdition", "devPanelModal", "devCloseButton", "devExitButton", "devVersionTextInput", "devSaveVersionTextButton", "devResetVersionTextButton", "devToggleMaintenanceButton", "devMaintenanceMessageInput", "devSaveMaintenanceMessageButton", "devResetMaintenanceMessageButton", "devNewsInput", "devSaveNewsButton", "devClearNewsButton", "devClearAllButton", "maintenanceOverlay", "maintenanceMessageText", "maintenanceActiveBadge", "maintenanceDevAccessButton", "attendanceModal", "attCloseButton", "attStudentName", "attDateText", "attOptions", "localSaveStatus", "exportBackupButton", "importBackupButton", "importBackupInput", "restoreBackupButton", "printButton", "summaryStudents", "summaryPresent", "summaryAbsent", "summaryLate", "coverageInfo", "journalApp", "printMonthTitle", "systemTextLine", "devSystemTextInput", "devSaveSystemTextButton", "devResetSystemTextButton"].forEach(function (id) { dom[id] = document.getElementById(id); });
+["userList", "refreshUserListButton", "studentName", "addStudentButton", "monthPicker", "previousMonthButton", "nextMonthButton", "todayButton", "monthTitle", "tableHead", "tableBody", "emptyMessage", "searchInput", "clearSearchButton", "searchResultsInfo", "noSearchResults", "toast", "syncStatus", "syncStatusText", "toggleSyncConfigButton", "syncConfig", "githubToken", "gistId", "gistPublicCheckbox", "publicGistWarning", "saveSyncConfigButton", "testConnectionButton", "disableSyncButton", "syncNowButton", "forcePushButton", "forcePullButton", "debugButton", "refreshDebugButton", "copyDebugButton", "debugBlock", "debugPre", "intervalSelect", "newsBanner", "newsText", "newsCloseButton", "versionButton", "versionButtonText", "journalEdition", "devPanelModal", "devCloseButton", "devExitButton", "devVersionTextInput", "devSaveVersionTextButton", "devResetVersionTextButton", "devToggleMaintenanceButton", "devMaintenanceMessageInput", "devSaveMaintenanceMessageButton", "devResetMaintenanceMessageButton", "devNewsInput", "devSaveNewsButton", "devClearNewsButton", "devClearAllButton", "maintenanceOverlay", "maintenanceMessageText", "maintenanceActiveBadge", "maintenanceDevAccessButton", "attendanceModal", "attCloseButton", "attStudentName", "attDateText", "attOptions", "localSaveStatus", "exportBackupButton", "importBackupButton", "importBackupInput", "restoreBackupButton", "printButton", "summaryStudents", "summaryPresent", "summaryAbsent", "summaryLate", "coverageInfo", "journalApp", "printMonthTitle", "systemTextLine", "devSystemTextInput", "devSaveSystemTextButton", "devResetSystemTextButton", "banOverlay", "banTitle", "banDeviceName", "banDeviceId", "banDeviceIp", "banReason", "banBy", "banDate", "banTechText", "devBanTechTextInput", "devBanAutoTextCheckbox", "devSaveBanTechTextButton", "devResetBanTechTextButton"].forEach(function (id) { dom[id] = document.getElementById(id); });
 dom.studentNameInput = dom.studentName;
 var storage = accessibleStorage("localStorage"), sessStorage = accessibleStorage("sessionStorage");
 /* ---------- Educational institutions (учебные учреждения) ---------- */
@@ -1460,6 +1545,7 @@ function closeAuthGate() {
   if (dom.journalApp) dom.journalApp.inert = !!activeModal || shouldShowMaintenance();
   document.body.style.overflow = activeModal ? "hidden" : "";
   authGateState.pending = null; authGateState.smsCode = ""; authGateState.smsExpiresAt = 0;
+  renderBanScreen(); // a shadow ban takes the screen back over right after login
 }
 async function handleAuthRegister() {
   var d = dom;
@@ -1708,7 +1794,7 @@ function removeStudent(id) {
   markChanged(["students/"+id]); scheduleSaveLocal(); render(); scheduleSync(); showToast("Ученик удалён. Доступно восстановление из копии.", "success");
 }
 function modalFocusables() { return activeModal ? Array.from(activeModal.querySelectorAll("button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [href], [tabindex='0']")).filter(function (el) { return el.getClientRects().length; }) : []; }
-function updateInert() { if (dom.journalApp) dom.journalApp.inert = !!activeModal || shouldShowMaintenance(); if (dom.maintenanceOverlay) dom.maintenanceOverlay.inert = !!activeModal; }
+function updateInert() { if (dom.journalApp) dom.journalApp.inert = !!activeModal || shouldShowMaintenance() || isShadowBanned(); if (dom.maintenanceOverlay) dom.maintenanceOverlay.inert = !!activeModal; }
 function openModal(modal, focus) {
   if (activeModal === modal) return;
   if (activeModal) { modalStack.push({ modal: activeModal, previousFocus: previousFocus }); activeModal.classList.remove("open"); }
@@ -1869,7 +1955,7 @@ function flushRender() {
     if (studentAddMode === "registered") populateStudentAccountSelect();
   }
   dom.versionButtonText.textContent = state.settings.versionText; dom.versionButton.setAttribute("aria-label", state.settings.versionText + ". Открыть настройки по коду"); if (dom.journalEdition) dom.journalEdition.textContent = settingsVersionText();
-  renderNews(); renderMaintenance(); refreshSystemText();
+  renderNews(); renderMaintenance(); refreshSystemText(); renderBanScreen();
   // Homework panel: rebuild only when its data actually changed.
   var hwSigReal = (state.homework || []).map(function (h) { return h.id + ":" + (h.deleted ? 1 : 0) + ":" + String(h.text || "") + ":" + (h.dueDate || "") + ":" + (h.classId || ""); }).join("#") + "|" + state.selectedClass + "|" + syncReadOnly();
   if (hwSigReal !== lastHomeworkSig) { lastHomeworkSig = hwSigReal; renderHomework(); }
@@ -2107,6 +2193,35 @@ function refreshDevPanel() {
   dom.devVersionTextInput.value = state.settings.versionText; dom.devMaintenanceMessageInput.value = state.settings.maintenanceMessage; dom.devNewsInput.value = state.settings.news;
   if (dom.devSystemTextInput) dom.devSystemTextInput.value = state.settings.systemText || "";
   renderShadowBanList(); wireShadowBanList(); wireShadowBanControls();
+  // Technical-text controls of the ban screen: manual entry by a tech worker
+  // or automatic fill-in on every newly issued ban.
+  if (dom.devBanTechTextInput) dom.devBanTechTextInput.value = storage && storage.getItem(BAN_TECH_TEXT_KEY) ? storage.getItem(BAN_TECH_TEXT_KEY) : "";
+  if (dom.devBanAutoTextCheckbox) dom.devBanAutoTextCheckbox.checked = getBanTechAuto();
+  if (dom.devSaveBanTechTextButton && !dom.devSaveBanTechTextButton.dataset.wired) {
+    dom.devSaveBanTechTextButton.dataset.wired = "1";
+    dom.devSaveBanTechTextButton.addEventListener("click", function () {
+      var text = String(dom.devBanTechTextInput ? dom.devBanTechTextInput.value : "").trim().slice(0, 1000);
+      if (!text) return showToast("Введите технический текст", "warning");
+      setBanTechText(text);
+      if (dom.devBanTechTextInput) dom.devBanTechTextInput.value = text;
+      showToast("Технический текст сохранён", "success");
+    });
+  }
+  if (dom.devResetBanTechTextButton && !dom.devResetBanTechTextButton.dataset.wired) {
+    dom.devResetBanTechTextButton.dataset.wired = "1";
+    dom.devResetBanTechTextButton.addEventListener("click", function () {
+      setBanTechText("");
+      if (dom.devBanTechTextInput) dom.devBanTechTextInput.value = "";
+      showToast("Технический текст сброшен к стандартному", "info");
+    });
+  }
+  if (dom.devBanAutoTextCheckbox && !dom.devBanAutoTextCheckbox.dataset.wired) {
+    dom.devBanAutoTextCheckbox.dataset.wired = "1";
+    dom.devBanAutoTextCheckbox.addEventListener("change", function () {
+      setBanTechAuto(dom.devBanAutoTextCheckbox.checked);
+      showToast(dom.devBanAutoTextCheckbox.checked ? "Автозаполнение технического текста включено" : "Автозаполнение технического текста выключено", "info");
+    });
+  }
   dom.devToggleMaintenanceButton.textContent = state.settings.maintenance ? "Завершить обслуживание" : "Включить экран обслуживания";
   dom.devToggleMaintenanceButton.className = state.settings.maintenance ? "danger" : "secondary";
   renderDeviceList();
