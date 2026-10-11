@@ -311,6 +311,7 @@ function renderBanScreen() {
   // right after the session opens (enforceIpBanOnLogin also re-issues it).
   var show = banned && !shouldShowMaintenance() && !(dom.authGate && !dom.authGate.hidden);
   el.hidden = !show;
+  syncBanOverlayStacking(); // keep the notice above the journal, below the settings escape hatch
   document.body.style.overflow = show ? "hidden" : (activeModal ? "hidden" : "");
   if (!show) return;
   var rec = findActiveBanRecord() || {};
@@ -319,6 +320,14 @@ function renderBanScreen() {
   if (dom.banDeviceId) dom.banDeviceId.textContent = deviceId || "не определён";
   if (dom.banDeviceIp) dom.banDeviceIp.textContent = getCachedPublicIp() || "не определён";
   if (dom.banReason) dom.banReason.textContent = rec.reason || rec.label || "Нарушение правил работы с журналом";
+  // Registry bans issued from settings are labelled e.g. "Ручной бан по IP" —
+  // on the screen it reads better as "Бан по IP-адресу ..." (the same wording
+  // the automatic IP enforcement uses).
+  if (dom.banReason && /^ручной\b/i.test(String(dom.banReason.textContent))) {
+    var manual = dom.banReason.textContent.replace(/^ручной\s+бан\s+по\s+/i, "Бан по ");
+    if (/ip/i.test(manual)) manual = manual.replace(/по\s*ip(\s*адрес)?/i, "по IP-адресу");
+    dom.banReason.textContent = manual.charAt(0).toUpperCase() + manual.slice(1);
+  }
   if (dom.banBy) dom.banBy.textContent = banIssuerLabel(rec) || "тех. работник";
   if (dom.banDate) dom.banDate.textContent = rec.at ? new Date(rec.at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "дата не указана";
   if (dom.banTechText) dom.banTechText.textContent = String(rec.tech || "").trim() || "Технический текст ещё не заполнен. Он появится здесь после того, как тех. работник внесёт его в настройках или включит автозаполнение.";
@@ -1794,7 +1803,22 @@ function removeStudent(id) {
   markChanged(["students/"+id]); scheduleSaveLocal(); render(); scheduleSync(); showToast("Ученик удалён. Доступно восстановление из копии.", "success");
 }
 function modalFocusables() { return activeModal ? Array.from(activeModal.querySelectorAll("button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [href], [tabindex='0']")).filter(function (el) { return el.getClientRects().length; }) : []; }
-function updateInert() { if (dom.journalApp) dom.journalApp.inert = !!activeModal || shouldShowMaintenance() || isShadowBanned(); if (dom.maintenanceOverlay) dom.maintenanceOverlay.inert = !!activeModal; }
+function updateInert() { if (dom.journalApp) dom.journalApp.inert = !!activeModal || shouldShowMaintenance() || isShadowBanned(); if (dom.maintenanceOverlay) dom.maintenanceOverlay.inert = !!activeModal; syncBanOverlayStacking(); }
+// The ban screen must stay strictly above everything the user can still open
+// while blocked: the settings-code dialog and the settings panel itself are
+// the escape hatch for lifting the ban, so they render on top of the notice
+// (z-index 9600); every other overlay drops below it (9400). Without this
+// re-stacking a banned device could not reach «Снять бан» at all.
+function syncBanOverlayStacking() {
+  var banned = isShadowBanned();
+  var openTop = activeModal && (activeModal === dom.settingsPasswordModal || activeModal === dom.devPanelModal);
+  if (dom.banOverlay) dom.banOverlay.style.zIndex = (banned && !openTop) ? "9500" : "9400";
+  // The code dialog / settings panel sit ABOVE the ban notice while open:
+  // this is the only sanctioned way to lift the ban, so it must stay clickable.
+  if (dom.settingsPasswordModal) dom.settingsPasswordModal.style.zIndex = openTop && activeModal === dom.settingsPasswordModal ? "9600" : "";
+  if (dom.devPanelModal) dom.devPanelModal.style.zIndex = openTop && activeModal === dom.devPanelModal ? "9600" : "";
+  if (dom.authGate) dom.authGate.style.zIndex = banned ? "1100" : "";
+}
 function openModal(modal, focus) {
   if (activeModal === modal) return;
   if (activeModal) { modalStack.push({ modal: activeModal, previousFocus: previousFocus }); activeModal.classList.remove("open"); }
