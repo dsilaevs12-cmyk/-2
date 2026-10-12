@@ -3506,7 +3506,12 @@ async function fetchFromGist(config, options) {
   if (!options.unconditional && syncRuntime.etag && syncRuntime.cachedRemote) headers["If-None-Match"] = syncRuntime.etag;
   var response = await syncFetch("https://api.github.com/gists/" + encodeURIComponent(config.gistId), { method: "GET", headers: headers }, config);
   if (response.status === 304) {
-    if (!syncRuntime.cachedRemote) throw new Error("Сервер вернул 304 без проверенной локальной копии");
+    // Defensive: a 304 can only arrive when we sent If-None-Match, which in
+    // turn requires cachedRemote. But pushToGist nulls the etag/cache while a
+    // request is in flight, so a stale conditional GET may still answer 304
+    // with no cache left. Retry unconditionally instead of throwing — a thrown
+    // error here used to abort the whole sync cycle and freeze updates.
+    if (!syncRuntime.cachedRemote) return fetchFromGist(config, Object.assign({}, options, { unconditional: true }));
     return { notModified: true, data: syncRuntime.cachedRemote, etag: syncRuntime.etag, hasFiles: syncRuntime.cachedHasFiles, sources: syncRuntime.cachedSources || [syncRuntime.cachedRemote] };
   }
   if (!response.ok) throw syncHTTPError(response);
@@ -3665,7 +3670,14 @@ function scheduleSync() {
   // Echo polls must run even when automatic push is disabled (interval "off"
   // or read-only public-Gist mode): the user still expects marks made on other
   // devices to appear without reloading the page.
-  if (Date.now() - syncRuntime.lastLocalMutationAt < 30000) scheduleEchoPolls();
+  // A remote change we just applied counts as activity too: an idle device
+  // that received a mark from another device schedules its own echo burst, so
+  // follow-up pushes from that device are picked up within seconds instead of
+  // waiting out the regular poll interval (up to 5 minutes). Previously echo
+  // pulls were only scheduled after LOCAL mutations, which left passive
+  // devices stuck until a manual sync ("отметки не приходят сами").
+  var lastActivity = Math.max(syncRuntime.lastLocalMutationAt || 0, syncRuntime.lastReceivedAt || 0);
+  if (Date.now() - lastActivity < 30000) scheduleEchoPolls();
   if (!syncAutomatic()) return;
   clearTimeout(syncRuntime.pushTimer);
   var generation = syncRuntime.generation;
@@ -3891,6 +3903,9 @@ async function syncRun(reason, polling) {
   clearTimeout(syncRuntime.pushTimer); syncRuntime.pushTimer = null;
   var config = syncOperationConfig();
   var operation = ++syncRuntime.operationCounter;
+  // Remember when the previous pull finished before this cycle overwrites it —
+  // needed by the tail-echo "received recently" check further below.
+  var prevLastPullAt = syncRuntime.lastPullAt || 0;
   syncRuntime.activeOperation = operation; syncRuntime.isSyncing = true;
   updateSyncUI();
   try {
@@ -3913,6 +3928,15 @@ async function syncRun(reason, polling) {
         syncRuntime.lastPullAt = Date.now(); syncSuccess(reason, state.revision, true); scheduleAccountSync(reason === "manual" ? "manual" : "auto"); return;
       }
       if(remote.notModified && Object.keys(offline.conflicts).length && syncRuntime.lastConflictRevision === state.revision){
+        // Unresolved conflicts still block uploading our side, but the remote
+        // may have moved on since (another device pushed fresh marks). Skipping
+        // the whole cycle used to freeze passive devices until the user pressed
+        // "Синхронизировать сейчас" manually. Apply what arrived instead and
+        // only suppress the push; the conflict notice stays in the queue panel.
+        var beforeConflictMerge = buildPayload();
+        var conflictIncoming = mergeData(beforeConflictMerge, remote.data);
+        if (!syncEqual(beforeConflictMerge, conflictIncoming)) { syncApply(conflictIncoming); announceIncoming(beforeConflictMerge, conflictIncoming, "Получено с другого устройства"); }
+        syncRuntime.lastPullAt = Date.now();
         if(reason === "manual")showToast(syncConfig.lastError,"warning");return;
       }
       checkSyncConflicts(remote, buildPayload());
@@ -3955,7 +3979,13 @@ async function syncRun(reason, polling) {
       // regular poll interval (up to 5 minutes on tablets) and without a
       // page reload. Only scheduled when something might actually be new:
       // we just uploaded, or the last pull saw remote changes.
-      if (!syncRuntime.blocked && (requiresPush || syncRuntime.lastReceivedAt > syncRuntime.lastPullAt - 60000)) {
+      // NOTE: the "received recently" check must compare against the pull
+      // timestamp from BEFORE this cycle — announceIncoming() runs during
+      // syncApply() above, so by now lastReceivedAt equals this cycle's
+      // receive time and any comparison against the freshly assigned
+      // lastPullAt is always false (dead condition, tail echo never fired).
+      var receivedRecently = Boolean(syncRuntime.lastReceivedAt) && syncRuntime.lastReceivedAt > prevLastPullAt;
+      if (!syncRuntime.blocked && (requiresPush || receivedRecently)) {
         var tailGeneration = syncRuntime.generation;
         var tailTimer = setTimeout(function () {
           syncRuntime.echoTimers = syncRuntime.echoTimers.filter(function (t) { return t !== tailTimer; });
@@ -4205,7 +4235,7 @@ syncListen(dom.syncQuickButton,"click",function(){
 window.addEventListener("focus",function(){if((syncAutomatic()||syncReadOnly())&&Date.now()-syncRuntime.lastPullAt>2000)fullSync("focus");});
 
 /* Relative URLs work both on user.github.io and user.github.io/repository/. */
-var APP_VERSION = '3.3.5', APP_BUILD_ID = 'c2e8a17d4b90f653'; // 3.3.5: restore fast sync — echo burst pulls at 1.5/4/9 s (noCache bypasses the CDN), visibility/focus/online refreshes no longer dropped when auto-interval is "off", echo timers survive rapid successive marks
+var APP_VERSION = '3.3.6', APP_BUILD_ID = 'd4f7b28e1a6c9503'; // 3.3.6: passive devices now receive marks automatically — echo burst also scheduled after REMOTE changes (lastReceivedAt), tail-echo "received recently" condition fixed (was always false), conflict early-return applies incoming data instead of freezing the cycle, 304-without-cache retries unconditionally instead of throwing
 var appUpdateRuntime = { checkedAt: 0, busy: false, available: '' };
 async function checkAppUpdate(){
   if(!/^https?:$/.test(window.location.protocol)||!syncOnline()||document.hidden||appUpdateRuntime.busy||Date.now()-appUpdateRuntime.checkedAt<300000)return;
