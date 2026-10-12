@@ -3745,7 +3745,14 @@ function scheduleSync() {
   // pulls were only scheduled after LOCAL mutations, which left passive
   // devices stuck until a manual sync ("отметки не приходят сами").
   var lastActivity = Math.max(syncRuntime.lastLocalMutationAt || 0, syncRuntime.lastReceivedAt || 0);
-  if (Date.now() - lastActivity < 30000) scheduleEchoPolls();
+  // NOTE: the activity window used to be 30 s, but the echo burst's own pulls
+  // (at 75/160/310 s) run announceIncoming -> scheduleSync and would find the
+  // window already expired — the late echoes were never rescheduled, so a
+  // passive device stopped polling ~9 s after receiving a mark and missed
+  // follow-up pushes for up to the full poll interval. 320 s keeps every pull
+  // of the chain alive while still letting truly idle devices settle into the
+  // regular poll cadence.
+  if (Date.now() - lastActivity < 320000) scheduleEchoPolls();
   if (!syncAutomatic()) return;
   clearTimeout(syncRuntime.pushTimer);
   var generation = syncRuntime.generation;
@@ -3955,7 +3962,13 @@ async function syncRun(reason, polling) {
   // dropped by the syncAutomatic() gate below, which broke the fast update
   // path after returning to the tab ("данные не обновляются").
   var echoPull = reason === "echo" || reason === "visibility" || reason === "focus" || reason === "online";
-  if (!echoPull && reason !== "manual" && !syncAutomatic()) return;
+  // Passive devices (no token yet, interval set to "off") must still be able
+  // to PULL: previously every automatic cycle was dropped by the syncAutomatic
+  // gate below unless the reason was "manual"/"echo", so a read-only device
+  // never fetched anything on its regular poll and marks appeared only after
+  // a manual press of "Синхронизировать сейчас". The requiresPush guard inside
+  // the cycle keeps such devices from ever uploading.
+  if (!echoPull && reason !== "manual" && !syncAutomatic() && !syncReadOnly()) return;
   if (syncRuntime.isSyncing) { if (!polling) syncRuntime.pendingSync = true; return; }
   if (syncRuntime.retryAt > Date.now()) { if (reason === "manual") showToast(syncConfig.lastError, "warning"); return; }
   if (reason !== "manual" && syncRuntime.blocked) return;
