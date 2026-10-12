@@ -3,7 +3,7 @@
    runtime-cached copies of the CDN vendor chunks so installed apps
    open without network. version.json is always fetched from the
    network so the in-app update check keeps working. */
-var CACHE_NAME = 'attendance-journal-v2';
+var CACHE_NAME = 'attendance-journal-v3';
 var APP_SHELL = [
   './',
   './index.html',
@@ -16,10 +16,15 @@ var APP_SHELL = [
 ];
 
 self.addEventListener('install', function (event) {
+  /* addAll is all-or-nothing: if any shell file 404s the worker would be
+     stuck in "installed" forever and updates would never activate. Cache
+     each file independently so a single missing asset cannot break PWA. */
   event.waitUntil(
     caches.open(CACHE_NAME).then(function (cache) {
-      return cache.addAll(APP_SHELL);
-    }).then(function () { return self.skipWaiting(); })
+      return Promise.all(APP_SHELL.map(function (url) {
+        return cache.add(url).catch(function () {});
+      }));
+    })
   );
 });
 
@@ -57,8 +62,10 @@ self.addEventListener('fetch', function (event) {
     return;
   }
 
-  /* Same-origin app shell: stale-while-revalidate. */
+  /* Same-origin app shell: stale-while-revalidate. Never serve a cached
+     copy of the release manifest — the update check must see fresh data. */
   if (url.origin === self.location.origin) {
+    if (url.pathname.endsWith('/version.json')) return;
     event.respondWith(
       caches.open(CACHE_NAME).then(function (cache) {
         return cache.match(request, { ignoreSearch: true }).then(function (cached) {

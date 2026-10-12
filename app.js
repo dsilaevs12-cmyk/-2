@@ -4365,8 +4365,16 @@ function wireAppUpdates(){
     if('serviceWorker' in navigator){
       navigator.serviceWorker.getRegistration().then(function(reg){
         if(reg&&reg.waiting){
+          reg.addEventListener('updatefound', function onNewWorker(){
+            var w = reg.installing || reg.waiting;
+            if(!w) return;
+            w.addEventListener('statechange', function(){
+              if(w.state === 'activated') window.location.reload();
+            });
+          });
           reg.waiting.postMessage('SKIP_WAITING');
-          window.location.reload();
+          /* Fallback: if the state events never fire (some browsers), reload anyway. */
+          setTimeout(function(){ window.location.reload(); }, 3000);
           return;
         }
         hardReloadOnUpdate();
