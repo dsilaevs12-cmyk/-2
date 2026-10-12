@@ -3,7 +3,7 @@
    runtime-cached copies of the CDN vendor chunks so installed apps
    open without network. version.json is always fetched from the
    network so the in-app update check keeps working. */
-var CACHE_NAME = 'attendance-journal-v3';
+var CACHE_NAME = 'attendance-journal-v4';
 var APP_SHELL = [
   './',
   './index.html',
@@ -51,10 +51,17 @@ self.addEventListener('fetch', function (event) {
      are never served from a stale cache. */
   if (url.pathname.endsWith('/version.json')) return;
 
-  /* Page navigations: cached app shell first, offline page as last resort. */
+  /* Page navigations: network first so deployed changes show up right
+     away (no "old version" complaints), cached shell when offline,
+     offline page as last resort. */
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request).catch(function () {
+      fetch(request).then(function (response) {
+        if (response && response.ok) {
+          caches.open(CACHE_NAME).then(function (c) { c.put(request, response.clone()); });
+        }
+        return response;
+      }).catch(function () {
         return caches.match('./index.html', { ignoreSearch: true })
           .then(function (cached) { return cached || caches.match('./offline.html'); });
       })
