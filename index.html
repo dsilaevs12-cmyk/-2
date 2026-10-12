@@ -14,6 +14,7 @@
     <div class="header-actions">
       <span id="localSaveStatus" class="storage-badge" role="status">Сохранено на устройстве</span>
       <button id="exportBackupButton" class="secondary" type="button">Скачать копию</button>
+      <button id="downloadAppHeaderButton" class="secondary" type="button" data-action="download-app">⬇ Скачать приложение</button>
       <button id="reportsButton" type="button"><svg class="glass-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 20v-7M12 20V8M19 20V3" stroke-width="3"/></svg>Отчёты</button>
       <button id="printButton" class="secondary" type="button">Печать</button>
       <button id="versionButton" class="version-badge" type="button" title="Открыть настройки по коду" aria-haspopup="dialog"><span class="version-badge-dot" aria-hidden="true"></span><span id="versionButtonText">версия: 3.3</span><svg class="glass-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 3-1 3-3 1-2 3 2 2v3l3 1 2 3h3l1-3 3-1 2-3-2-2V7l-3-1-2-3z"/><circle cx="12" cy="11" r="3"/></svg></button>
@@ -226,10 +227,23 @@
       </div>
     </div>
     <button type="button" id="authSyncOpenButton" class="auth-sync-open secondary">Синхронизировать с другим устройством</button>
+    <button type="button" id="authDownloadAppButton" class="auth-sync-open secondary">⬇ Скачать как приложение</button>
     <p class="auth-footnote" id="authFootnote"></p>
   </div>
 </div>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<div id="installAppModal" class="modal-backdrop">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="installAppTitle">
+    <div class="student-card-head"><div><p class="eyebrow">Веб-приложение</p><h3 id="installAppTitle">Скачать журнал как приложение</h3></div><button id="installAppClose" class="secondary icon-button" type="button" aria-label="Закрыть окно установки">×</button></div>
+    <p class="settings-intro">Журнал работает как веб-приложение (PWA): после установки он открывается со значка на рабочем столе, доступен офлайн и синхронизирует отметки между устройствами.</p>
+    <div id="installAppDirectWrap" hidden><button id="installAppDirectButton" type="button" style="width:100%;justify-content:center;margin-bottom:14px">Установить приложение сейчас</button></div>
+    <div class="dev-section"><label>Способ 1 · Телефон или планшет</label><p class="help-text">Откройте сайт в <strong>Chrome</strong> (Android) или <strong>Safari</strong> (iPhone/iPad) и добавьте журнал на главный экран — приложение запустится в полноэкранном режиме без адресной строки.</p><p class="help-text"><strong>Android:</strong> меню браузера (⋮) → «Установить приложение» или «Добавить на главный экран».<br><strong>iPhone / iPad:</strong> кнопка «Поделиться» → «На экран „Домой"».</p></div>
+    <div class="dev-section"><label>Способ 2 · Компьютер</label><p class="help-text"><strong>Chrome / Edge / Яндекс:</strong> справа от адресной строки нажмите значок установки ⊕ (или меню ⋮ → «Установить…») — журнал появится как приложение с отдельным окном.<br><strong>Firebase Hosting:</strong> откройте <span id="installAppUrlSample">https://ваш-проект.web.app</span> и установите так же.</p></div>
+    <div class="dev-section"><label>Нужен файл приложения?</label><p class="help-text">Если установка из браузера недоступна, скачайте APK-файл журнала для Android или сохраните папку сайта на флешку — инструкция по запуску внутри.</p><div class="row-actions"><a id="installAppApkLink" class="secondary" href="https://github.com/silentsense76-jpg/attendance-diary/releases/latest/download/Journal.apk" target="_blank" rel="noopener">Скачать APK для Android</a><button id="installAppCopyUrlButton" class="secondary" type="button">Скопировать ссылку</button></div></div>
+    <div class="modal-actions"><button id="installAppDoneButton" type="button">Понятно</button></div>
+  </div>
+</div>
 
 <div id="reportsModal" class="modal-backdrop"><div class="modal project-modal report-modal" role="dialog" aria-modal="true" aria-labelledby="reportsTitle"><div class="project-modal-head"><div><p class="eyebrow">Итоги посещаемости</p><h3 id="reportsTitle">Отчёты</h3></div><button id="reportsClose" class="secondary icon-button" type="button" aria-label="Закрыть отчёты">×</button></div><div class="project-form report-filters"><label>Учебный год с сентября<input id="reportYear" type="number" min="1000" max="9998"></label><label>Период<select id="reportQuarter"><option value="1">I четверть · сентябрь–октябрь</option><option value="2">II четверть · ноябрь–декабрь</option><option value="3">III четверть · январь–март</option><option value="4">IV четверть · апрель–май</option><option value="custom">Свой период</option></select></label><label>С даты<input id="reportStart" type="date"></label><label>По дату включительно<input id="reportEnd" type="date"></label><label>Класс<select id="reportClass"></select></label><label>Предмет<select id="reportSubject"></select></label><label>Ученик<select id="reportStudent"></select></label><label>Показать итоги<select id="reportGroup"><option value="students">По ученикам</option><option value="classes">По классам</option><option value="subjects">По предметам</option></select></label></div><p class="help-text">Границы четверти примерные — измените даты под календарь школы. Процент = (присутствия + «Онлайн») / все заполненные отметки проведённых занятий. Будущие, запланированные, отменённые занятия и пустые отметки исключены.</p><div id="reportSummary" class="report-summary" role="status"></div><div class="report-table-wrap"><table class="report-table"><thead><tr><th>Имя / название</th><th>Был</th><th>Онлайн</th><th>Пропустил</th><th>Отмечено</th><th>Посещаемость</th></tr></thead><tbody id="reportRows"></tbody></table></div><p id="reportNote" class="help-text"></p><div class="modal-actions"><button id="reportExcel" type="button">Скачать Excel</button><button id="reportPDF" class="secondary" type="button">Скачать PDF</button></div></div></div>
 <script src="vendor.min.js" defer></script>

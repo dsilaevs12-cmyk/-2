@@ -1455,6 +1455,74 @@ function wireAuthSyncWindow() {
   d.authSyncTestButton.addEventListener("click", handleAuthSyncTest);
   d.authSyncSaveButton.addEventListener("click", handleAuthSyncSave);
 }
+
+/* ============ INSTALL AS APP ("Скачать как приложение") ============
+ * The journal is a PWA-friendly static site. This block wires the
+ * "Скачать как приложение" button on the welcome screen and in the
+ * settings panel to an instruction modal. When the browser fires
+ * beforeinstallprompt we capture the event so the modal can offer a
+ * one-click native install; otherwise the user gets manual steps and
+ * the direct APK link. */
+var deferredInstallPrompt = null;
+window.addEventListener("beforeinstallprompt", function (event) {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  var wrap = document.getElementById("installAppDirectWrap");
+  if (wrap) wrap.hidden = false;
+});
+window.addEventListener("appinstalled", function () {
+  deferredInstallPrompt = null;
+  closeModal();
+  showToast("Приложение установлено — открывайте его со значка на рабочем столе.", "success");
+});
+function openInstallAppModal() {
+  var modal = document.getElementById("installAppModal");
+  if (!modal) return;
+  var sample = document.getElementById("installAppUrlSample");
+  if (sample && /^https?:$/.test(window.location.protocol)) sample.textContent = window.location.href.split("?")[0];
+  var wrap = document.getElementById("installAppDirectWrap");
+  if (wrap) wrap.hidden = !deferredInstallPrompt;
+  openModal(modal, document.getElementById("installAppDoneButton"));
+}
+function wireInstallApp() {
+  var modal = document.getElementById("installAppModal");
+  if (!modal || modal.dataset.wired === "1") return;
+  modal.dataset.wired = "1";
+  var authBtn = document.getElementById("authDownloadAppButton");
+  if (authBtn) authBtn.addEventListener("click", openInstallAppModal);
+  document.querySelectorAll('[data-action="download-app"]').forEach(function (btn) {
+    btn.addEventListener("click", openInstallAppModal);
+  });
+  ["installAppClose", "installAppDoneButton"].forEach(function (id) {
+    var btn = document.getElementById(id);
+    if (btn) btn.addEventListener("click", closeModal);
+  });
+  modal.addEventListener("click", function (event) { if (event.target === modal) closeModal(); });
+  var direct = document.getElementById("installAppDirectButton");
+  if (direct) direct.addEventListener("click", function () {
+    if (!deferredInstallPrompt) return;
+    deferredInstallPrompt.prompt();
+    deferredInstallPrompt.userChoice.then(function (choice) {
+      if (choice && choice.outcome === "accepted") deferredInstallPrompt = null;
+      var wrap = document.getElementById("installAppDirectWrap");
+      if (wrap) wrap.hidden = true;
+    }).catch(function () {});
+  });
+  var copyBtn = document.getElementById("installAppCopyUrlButton");
+  if (copyBtn) copyBtn.addEventListener("click", function () {
+    var url = window.location.href.split("?")[0];
+    function done() { showToast("Ссылка скопирована — откройте её на другом устройстве.", "success"); }
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done, function () { fallbackCopy(url); done(); });
+    else { fallbackCopy(url); done(); }
+  });
+}
+function fallbackCopy(text) {
+  var ta = document.createElement("textarea");
+  ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand("copy"); } catch (error) {}
+  document.body.removeChild(ta);
+}
 function authSyncInputConfig() {
   var token = dom.authSyncToken.value.trim(), gistId = extractGistId(dom.authSyncGist.value);
   if (!/^[a-f0-9]{5,64}$/i.test(gistId) || /[\r\n]/.test(token)) throw new Error("Введите правильный ID Gist (ссылку на публичный Gist тоже можно вставить целиком).");
@@ -2473,7 +2541,7 @@ function init() {
   try { if (sessStorage) sessStorage.removeItem("attendance_dev_unlocked"); } catch (error) {}
   try { if (!state.devUnlocked && storage && storage.getItem(SETTINGS_UNLOCK_KEY) === "1") state.devUnlocked = true; } catch (error) {}
   if (!storage) updateLocalStatus("Только в этой вкладке", true);
-  loadViewPreference(); initTheme(); dom.intervalSelect.value = String(syncRuntime.pollIntervalMs); wireCoreEvents(); wireViewEvents(); wireProjectEvents(); wireAppUpdates(); updateSyncUI(); render(); applyRoleRestrictions();
+  loadViewPreference(); initTheme(); dom.intervalSelect.value = String(syncRuntime.pollIntervalMs); wireCoreEvents(); wireViewEvents(); wireProjectEvents(); wireAppUpdates(); wireInstallApp(); updateSyncUI(); render(); applyRoleRestrictions();
   // Authentication gate: the very first opening of a device must show the
   // forced register/login screen. Only after a successful login (with 2FA)
   // or registration does the journal unlock for this device.
