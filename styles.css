@@ -3480,7 +3480,7 @@ html[data-theme="dark"] .att-option-late { border-color: rgba(137, 116, 72, .75)
 .autumn-leaves { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
 .autumn-leaves span {
   position: absolute; top: -12vh; display: inline-block;
-  font-size: 24px; opacity: .55; filter: saturate(1.15);
+  font-size: 36px; opacity: .55; filter: saturate(1.15);
   will-change: transform;
   animation: leaf-fall linear infinite;
 }
@@ -3493,20 +3493,20 @@ html[data-theme="dark"] .att-option-late { border-color: rgba(137, 116, 72, .75)
 }
 /* Phones (<=700px): modest density so the small screen stays readable */
 @media screen and (max-width:700px){
-  .autumn-leaves span:nth-child(1){left:6%;  animation-duration:19s; animation-delay:-2s;  font-size:18px}
-  .autumn-leaves span:nth-child(2){left:22%; animation-duration:24s; animation-delay:-9s;  font-size:26px}
-  .autumn-leaves span:nth-child(3){left:38%; animation-duration:17s; animation-delay:-5s;  font-size:15px}
-  .autumn-leaves span:nth-child(4){left:55%; animation-duration:26s; animation-delay:-14s; font-size:24px}
-  .autumn-leaves span:nth-child(5){left:71%; animation-duration:21s; animation-delay:-7s;  font-size:19px}
-  .autumn-leaves span:nth-child(6){left:86%; animation-duration:28s; animation-delay:-3s;  font-size:27px}
+  .autumn-leaves span:nth-child(1){left:6%;  animation-duration:19s; animation-delay:-2s;  font-size:27px}
+  .autumn-leaves span:nth-child(2){left:22%; animation-duration:24s; animation-delay:-9s;  font-size:39px}
+  .autumn-leaves span:nth-child(3){left:38%; animation-duration:17s; animation-delay:-5s;  font-size:22px}
+  .autumn-leaves span:nth-child(4){left:55%; animation-duration:26s; animation-delay:-14s; font-size:36px}
+  .autumn-leaves span:nth-child(5){left:71%; animation-duration:21s; animation-delay:-7s;  font-size:28px}
+  .autumn-leaves span:nth-child(6){left:86%; animation-duration:28s; animation-delay:-3s;  font-size:40px}
   /* Leaves 7-12 fall at negative delays so they are already spread across the
      screen on first paint — no "empty top half" gap right after load. */
-  .autumn-leaves span:nth-child(7){left:12%; animation-duration:23s; animation-delay:-17s; font-size:20px}
-  .autumn-leaves span:nth-child(8){left:30%; animation-duration:20s; animation-delay:-12s; font-size:16px}
-  .autumn-leaves span:nth-child(9){left:48%; animation-duration:25s; animation-delay:-19s; font-size:22px}
-  .autumn-leaves span:nth-child(10){left:63%; animation-duration:18s; animation-delay:-8s;  font-size:17px}
-  .autumn-leaves span:nth-child(11){left:79%; animation-duration:27s; animation-delay:-15s; font-size:24px}
-  .autumn-leaves span:nth-child(12){left:93%; animation-duration:22s; animation-delay:-6s;  font-size:19px}
+  .autumn-leaves span:nth-child(7){left:12%; animation-duration:23s; animation-delay:-17s; font-size:30px}
+  .autumn-leaves span:nth-child(8){left:30%; animation-duration:20s; animation-delay:-12s; font-size:24px}
+  .autumn-leaves span:nth-child(9){left:48%; animation-duration:25s; animation-delay:-19s; font-size:33px}
+  .autumn-leaves span:nth-child(10){left:63%; animation-duration:18s; animation-delay:-8s;  font-size:26px}
+  .autumn-leaves span:nth-child(11){left:79%; animation-duration:27s; animation-delay:-15s; font-size:36px}
+  .autumn-leaves span:nth-child(12){left:93%; animation-duration:22s; animation-delay:-6s;  font-size:28px}
 }
 /* Tablets (701–1100px): the wide viewport used to run 16 big blurred
    leaves at once — on weaker tablets that constant GPU compositing was the
@@ -3514,47 +3514,47 @@ html[data-theme="dark"] .att-option-late { border-color: rgba(137, 116, 72, .75)
    saturate() filter is dropped here), the leaf count is cut in half and the
    remaining ones are simply a little larger. */
 @media screen and (min-width:701px) and (max-width:1100px){
-  .autumn-leaves span{filter:none;font-size:34px; opacity:.5}
+  .autumn-leaves span{filter:none;font-size:51px; opacity:.5}
   .autumn-leaves span:nth-child(n+9){display:none}
-  .autumn-leaves span:nth-child(1){left:4%;   animation-duration:21s; animation-delay:-2s;  font-size:24px}
-  .autumn-leaves span:nth-child(2){left:16%;  animation-duration:26s; animation-delay:-9s;  font-size:32px}
-  .autumn-leaves span:nth-child(3){left:28%;  animation-duration:18s; animation-delay:-5s;  font-size:20px}
-  .autumn-leaves span:nth-child(4){left:41%;  animation-duration:28s; animation-delay:-14s; font-size:30px}
-  .autumn-leaves span:nth-child(5){left:54%;  animation-duration:23s; animation-delay:-7s;  font-size:26px}
-  .autumn-leaves span:nth-child(6){left:67%;  animation-duration:30s; animation-delay:-3s;  font-size:34px}
-  .autumn-leaves span:nth-child(7){left:79%;  animation-duration:20s; animation-delay:-11s; font-size:22px}
-  .autumn-leaves span:nth-child(8){left:91%;  animation-duration:27s; animation-delay:-6s;  font-size:31px}
-  .autumn-leaves span:nth-child(9){left:9%;   animation-duration:24s; animation-delay:-18s; font-size:28px}
-  .autumn-leaves span:nth-child(10){left:22%; animation-duration:19s; animation-delay:-9s;  font-size:23px}
-  .autumn-leaves span:nth-child(11){left:36%; animation-duration:26s; animation-delay:-13s; font-size:33px}
-  .autumn-leaves span:nth-child(12){left:49%; animation-duration:22s; animation-delay:-4s;  font-size:25px}
-  .autumn-leaves span:nth-child(13){left:62%; animation-duration:29s; animation-delay:-16s; font-size:30px}
-  .autumn-leaves span:nth-child(14){left:74%; animation-duration:21s; animation-delay:-8s;  font-size:26px}
-  .autumn-leaves span:nth-child(15){left:86%; animation-duration:27s; animation-delay:-20s; font-size:32px}
-  .autumn-leaves span:nth-child(16){left:96%; animation-duration:23s; animation-delay:-12s; font-size:24px}
+  .autumn-leaves span:nth-child(1){left:4%;   animation-duration:21s; animation-delay:-2s;  font-size:36px}
+  .autumn-leaves span:nth-child(2){left:16%;  animation-duration:26s; animation-delay:-9s;  font-size:48px}
+  .autumn-leaves span:nth-child(3){left:28%;  animation-duration:18s; animation-delay:-5s;  font-size:30px}
+  .autumn-leaves span:nth-child(4){left:41%;  animation-duration:28s; animation-delay:-14s; font-size:45px}
+  .autumn-leaves span:nth-child(5){left:54%;  animation-duration:23s; animation-delay:-7s;  font-size:39px}
+  .autumn-leaves span:nth-child(6){left:67%;  animation-duration:30s; animation-delay:-3s;  font-size:51px}
+  .autumn-leaves span:nth-child(7){left:79%;  animation-duration:20s; animation-delay:-11s; font-size:33px}
+  .autumn-leaves span:nth-child(8){left:91%;  animation-duration:27s; animation-delay:-6s;  font-size:46px}
+  .autumn-leaves span:nth-child(9){left:9%;   animation-duration:24s; animation-delay:-18s; font-size:42px}
+  .autumn-leaves span:nth-child(10){left:22%; animation-duration:19s; animation-delay:-9s;  font-size:34px}
+  .autumn-leaves span:nth-child(11){left:36%; animation-duration:26s; animation-delay:-13s; font-size:50px}
+  .autumn-leaves span:nth-child(12){left:49%; animation-duration:22s; animation-delay:-4s;  font-size:38px}
+  .autumn-leaves span:nth-child(13){left:62%; animation-duration:29s; animation-delay:-16s; font-size:45px}
+  .autumn-leaves span:nth-child(14){left:74%; animation-duration:21s; animation-delay:-8s;  font-size:39px}
+  .autumn-leaves span:nth-child(15){left:86%; animation-duration:27s; animation-delay:-20s; font-size:48px}
+  .autumn-leaves span:nth-child(16){left:96%; animation-duration:23s; animation-delay:-12s; font-size:36px}
 }
 /* Desktop PCs (>=1101px): full-bleed canopy of leaves across the wide screen */
 @media screen and (min-width:1101px){
-  .autumn-leaves span{font-size:34px; opacity:.48}
-  .autumn-leaves span:nth-child(1){left:3%;   animation-duration:23s; animation-delay:-2s;  font-size:26px}
-  .autumn-leaves span:nth-child(2){left:13%;  animation-duration:28s; animation-delay:-9s;  font-size:36px}
-  .autumn-leaves span:nth-child(3){left:23%;  animation-duration:20s; animation-delay:-5s;  font-size:22px}
-  .autumn-leaves span:nth-child(4){left:33%;  animation-duration:31s; animation-delay:-14s; font-size:34px}
-  .autumn-leaves span:nth-child(5){left:44%;  animation-duration:25s; animation-delay:-7s;  font-size:28px}
-  .autumn-leaves span:nth-child(6){left:55%;  animation-duration:33s; animation-delay:-3s;  font-size:38px}
-  .autumn-leaves span:nth-child(7){left:65%;  animation-duration:22s; animation-delay:-11s; font-size:24px}
-  .autumn-leaves span:nth-child(8){left:75%;  animation-duration:29s; animation-delay:-6s;  font-size:35px}
-  .autumn-leaves span:nth-child(9){left:85%;  animation-duration:26s; animation-delay:-16s; font-size:30px}
-  .autumn-leaves span:nth-child(10){left:95%; animation-duration:35s; animation-delay:-8s;  font-size:40px}
-  .autumn-leaves span:nth-child(11){left:7%;  animation-duration:24s; animation-delay:-19s; font-size:27px}
-  .autumn-leaves span:nth-child(12){left:18%; animation-duration:30s; animation-delay:-12s; font-size:37px}
-  .autumn-leaves span:nth-child(13){left:29%; animation-duration:21s; animation-delay:-6s;  font-size:23px}
-  .autumn-leaves span:nth-child(14){left:39%; animation-duration:34s; animation-delay:-15s; font-size:39px}
+  .autumn-leaves span{font-size:51px; opacity:.48}
+  .autumn-leaves span:nth-child(1){left:3%;   animation-duration:23s; animation-delay:-2s;  font-size:39px}
+  .autumn-leaves span:nth-child(2){left:13%;  animation-duration:28s; animation-delay:-9s;  font-size:54px}
+  .autumn-leaves span:nth-child(3){left:23%;  animation-duration:20s; animation-delay:-5s;  font-size:33px}
+  .autumn-leaves span:nth-child(4){left:33%;  animation-duration:31s; animation-delay:-14s; font-size:51px}
+  .autumn-leaves span:nth-child(5){left:44%;  animation-duration:25s; animation-delay:-7s;  font-size:42px}
+  .autumn-leaves span:nth-child(6){left:55%;  animation-duration:33s; animation-delay:-3s;  font-size:57px}
+  .autumn-leaves span:nth-child(7){left:65%;  animation-duration:22s; animation-delay:-11s; font-size:36px}
+  .autumn-leaves span:nth-child(8){left:75%;  animation-duration:29s; animation-delay:-6s;  font-size:52px}
+  .autumn-leaves span:nth-child(9){left:85%;  animation-duration:26s; animation-delay:-16s; font-size:45px}
+  .autumn-leaves span:nth-child(10){left:95%; animation-duration:35s; animation-delay:-8s;  font-size:60px}
+  .autumn-leaves span:nth-child(11){left:7%;  animation-duration:24s; animation-delay:-19s; font-size:40px}
+  .autumn-leaves span:nth-child(12){left:18%; animation-duration:30s; animation-delay:-12s; font-size:56px}
+  .autumn-leaves span:nth-child(13){left:29%; animation-duration:21s; animation-delay:-6s;  font-size:34px}
+  .autumn-leaves span:nth-child(14){left:39%; animation-duration:34s; animation-delay:-15s; font-size:58px}
 
-  .autumn-leaves span:nth-child(15){left:50%; animation-duration:27s; animation-delay:-9s;  font-size:31px}
-  .autumn-leaves span:nth-child(16){left:60%; animation-duration:32s; animation-delay:-21s; font-size:36px}
-  .autumn-leaves span:nth-child(17){left:70%; animation-duration:25s; animation-delay:-4s;  font-size:29px}
-  .autumn-leaves span:nth-child(18){left:90%; animation-duration:28s; animation-delay:-17s; font-size:33px}
+  .autumn-leaves span:nth-child(15){left:50%; animation-duration:27s; animation-delay:-9s;  font-size:46px}
+  .autumn-leaves span:nth-child(16){left:60%; animation-duration:32s; animation-delay:-21s; font-size:54px}
+  .autumn-leaves span:nth-child(17){left:70%; animation-duration:25s; animation-delay:-4s;  font-size:44px}
+  .autumn-leaves span:nth-child(18){left:90%; animation-duration:28s; animation-delay:-17s; font-size:50px}
 }
 /* Dark mode: slightly dimmer leaves + warm dark wash (all breakpoints) */
 /* Dark appearance comes from TWO independent sources:
