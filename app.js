@@ -1464,6 +1464,31 @@ function wireAuthSyncWindow() {
  * one-click native install; otherwise the user gets manual steps and
  * the direct APK link. */
 var deferredInstallPrompt = null;
+/* Register the PWA service worker so the journal installs as a real
+   standalone app and works offline. No-op on file:// and unsupported
+   browsers; an existing controller means we are already installed. */
+var journalServiceWorkerUrl = new URL("sw.js", window.location.href).href;
+var journalInstalledAsApp =
+  (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
+  window.navigator.standalone === true;
+if ("serviceWorker" in navigator && /^https?:$/.test(window.location.protocol)) {
+  window.addEventListener("load", function () {
+    navigator.serviceWorker.register(journalServiceWorkerUrl).catch(function () {});
+    navigator.serviceWorker.getRegistration().then(function (reg) {
+      if (!reg) return;
+      reg.addEventListener("updatefound", function () {
+        var sw = reg.installing;
+        if (!sw) return;
+        sw.addEventListener("statechange", function () {
+          if (sw.state === "installed" && navigator.serviceWorker.controller) {
+            var banner = document.getElementById("appUpdateBanner");
+            if (banner) banner.hidden = false;
+          }
+        });
+      });
+    }).catch(function () {});
+  });
+}
 window.addEventListener("beforeinstallprompt", function (event) {
   event.preventDefault();
   deferredInstallPrompt = event;
@@ -4335,14 +4360,38 @@ async function checkAppUpdate(){
 function wireAppUpdates(){
   var button=document.getElementById('appUpdateButton');
   if(button)button.addEventListener('click',function(){
-    if(!appUpdateRuntime.available||saveLocal()===false)return;
-    var url=new URL(window.location.href);url.searchParams.set('v',appUpdateRuntime.available);window.location.replace(url.href);
+    /* PWA path: ask the waiting service worker to activate, then reload
+       so the browser picks up the freshly precached app shell. */
+    if('serviceWorker' in navigator){
+      navigator.serviceWorker.getRegistration().then(function(reg){
+        if(reg&&reg.waiting){
+          reg.addEventListener('updatefound', function onNewWorker(){
+            var w = reg.installing || reg.waiting;
+            if(!w) return;
+            w.addEventListener('statechange', function(){
+              if(w.state === 'activated') window.location.reload();
+            });
+          });
+          reg.waiting.postMessage('SKIP_WAITING');
+          /* Fallback: if the state events never fire (some browsers), reload anyway. */
+          setTimeout(function(){ window.location.reload(); }, 3000);
+          return;
+        }
+        hardReloadOnUpdate();
+      }).catch(hardReloadOnUpdate);
+      return;
+    }
+    hardReloadOnUpdate();
   });
   if(/^https?:$/.test(window.location.protocol)){
     checkAppUpdate();setInterval(checkAppUpdate,300000);
     window.addEventListener('focus',checkAppUpdate);
     document.addEventListener('visibilitychange',checkAppUpdate);
   }
+}
+function hardReloadOnUpdate(){
+    if(!appUpdateRuntime.available||saveLocal()===false)return;
+    var url=new URL(window.location.href);url.searchParams.set('v',appUpdateRuntime.available);window.location.replace(url.href);
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();

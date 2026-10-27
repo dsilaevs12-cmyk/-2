@@ -2493,7 +2493,7 @@ html[data-theme="dark"] button.student-card-day.late { color: var(--late-text) !
        BLUE tints (rgb 246/251/255, 119/170/195, 44/95/121...) which made cards,
        panels and modals look blue-grey on top of the autumn background.
        Warmed to parchment/amber equivalents. */
-    --glass: rgba(255, 248, 236, .54); --glass-strong: rgba(255, 248, 236, .83); --glass-table: rgba(255, 249, 240, .78);
+    --glass: rgba(255, 248, 236, .9); --glass-strong: rgba(255, 248, 236, .97); --glass-table: rgba(255, 249, 240, .95);
     --glass-line: rgba(255, 255, 255, .9); --glass-edge: rgba(194, 132, 74, .34); --glass-highlight: rgba(255, 255, 255, .88);
     --glass-shadow: 0 8px 24px rgba(122, 74, 33, .09), inset 0 1px 1px rgba(255, 255, 255, .95), inset 0 -1px 1px rgba(166, 106, 49, .12);
     --glass-field: rgba(255, 251, 243, .68); --glass-button: linear-gradient(170deg, #c38743 0%, #9f4115 47%, #8e360d 100%); --button-text: #fff;
@@ -2508,7 +2508,7 @@ html[data-theme="dark"] button.student-card-day.late { color: var(--late-text) !
   .container {
     position: relative; width: calc(100% - 48px); max-width: 1460px; margin: 28px auto; padding: 28px;
     border: 1px solid var(--glass-line); border-radius: 34px;
-    background: linear-gradient(145deg, rgba(255,255,255,.48), rgba(247,224,190,.22));
+    background: linear-gradient(145deg, rgba(255,253,248,.94), rgba(249,232,208,.93));
     box-shadow: 0 22px 68px rgba(113,74,37,.16), inset 0 0 0 1px rgba(255,255,255,.4), inset 0 2px 3px #ffffffb3, 0 0 0 1px var(--glass-edge);
   }
   .page-header { align-items:center; border:0; margin:0 0 18px; padding:0; gap:18px; }
@@ -2711,13 +2711,13 @@ html[data-theme="dark"] button.student-card-day.late { color: var(--late-text) !
     /* BUGFIX (pre-release audit): dark-theme glass tokens were still NAVY BLUE
        (30/57/79, 24/48/68, 188/225/244...) — panels and modals looked blue in
        dark mode over the autumn background. Warmed to deep-brown equivalents. */
-    --glass:rgba(74,50,26,.68); --glass-strong:rgba(58,39,18,.94); --glass-table:rgba(52,35,16,.92);
+    --glass:rgba(74,50,26,.9); --glass-strong:rgba(58,39,18,.97); --glass-table:rgba(52,35,16,.96);
     --glass-line:rgba(244,214,170,.3); --glass-edge:rgba(42,24,8,.42); --glass-highlight:rgba(247,222,188,.27);
     --glass-field:rgba(90,62,34,.76); --glass-shadow:0 8px 24px #2a150233, inset 0 1px 1px #ffddc933, inset 0 -1px 1px #2c170033;
     --glass-button:linear-gradient(165deg,#a5613b,#7e431d 53%,#743b15); --button-text:#fff8f5;
   }
   body { background-image:radial-gradient(ellipse at 3% 12%, #76481ec2, transparent 40%), radial-gradient(ellipse at 84% 6%, #6f5a4170, transparent 38%), radial-gradient(ellipse at 80% 87%, #6930188a, transparent 45%), linear-gradient(125deg, transparent 12%, #93684d26 27%, transparent 40%, #7b552d40 60%, transparent 75%); }
-  .container { background:linear-gradient(145deg,#603a1b66,#41270a66); box-shadow:0 24px 80px #2216004d, inset 0 1px 2px #f5cdb640, 0 0 0 1px #90684240; }
+  .container { background:linear-gradient(145deg,#5d3a1bf2,#41270af4); box-shadow:0 24px 80px #2216004d, inset 0 1px 2px #f5cdb640, 0 0 0 1px #90684240; }
   button:not(.secondary):not(.danger):not(.warning):not(.attendance-button):not(.att-option):not(.version-badge):not(.att-head-close):not(.news-close) { color:var(--button-text); }
   .summary-card .summary-symbol { background:linear-gradient(140deg,#b565344d,#88582666); color:#fdb996; border-color:var(--glass-line); box-shadow:inset 0 1px 2px #ffffff26; }
   .summary-card.present .summary-symbol { background:var(--success-soft); color:var(--success); }
@@ -2790,7 +2790,7 @@ body[data-tech-admin] .role-banner{background:#fef3c7;border-color:#79450a;color
     --background:#f7ceb3;--text:#714c1a;--text-strong:#563c07;--text-soft:#7e592e;--muted:#926e47;--placeholder:#a07e5c;
     --card:#fff4ec;--surface-1:#ffefe3;--surface-2:#fde7d8;--border:#efcbb3;--border-subtle:#f4dac8;
     --success:#834600;--success-soft:#f4dabd;--absent:#f8dce6;--absent-text:#af3458;--late:#ffebc9;--late-text:#975500;
-    --glass:rgba(255,248,236,.42);--glass-strong:rgba(255,249,240,.94);--glass-field:rgba(255,250,241,.63);--glass-table:rgba(255,250,241,.72);
+    --glass:rgba(255,248,236,.9);--glass-strong:rgba(255,249,240,.97);--glass-field:rgba(255,250,241,.88);--glass-table:rgba(255,250,241,.95);
     --glass-line:rgba(255,255,255,.92);--glass-edge:rgba(194,110,40,.35);--glass-highlight:rgba(255,255,255,.95);
     --glass-button:linear-gradient(175deg,#dca76b 0%,#b26915 38%,#8a4a00 72%,#c7863c 100%);
     --glass-shadow:inset 0 1px 1px #fff,inset 0 -1px 2px #edab7533,0 5px 17px #c4713b14;
@@ -2800,19 +2800,20 @@ body[data-tech-admin] .role-banner{background:#fef3c7;border-color:#79450a;color
     background-image:radial-gradient(ellipse at 8% 0%,#fff7ed 0%,transparent 44%),radial-gradient(ellipse at 84% 12%,#fbae70cc 0%,transparent 46%),radial-gradient(ellipse at 4% 76%,#ecb97e99 0%,transparent 35%),linear-gradient(136deg,#f7d6b2,#feedda 50%,#f5b68c);
   }
   body::before {
-    content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:-1;
     background:linear-gradient(132deg,transparent 7%,#fff0 12%,#ffffffa6 12.4%,#fff0 13.8%,transparent 28%,#fff6 29%,#fff0 33%),linear-gradient(29deg,transparent 21%,#fff9 21.5%,#fff0 23.5%,transparent 69%,#ffffffab 69.5%,#fff0 72%),radial-gradient(ellipse 90% 46% at -12% 82%,transparent 64%,#fff2e4c9 65%,#f5b06247 66%,transparent 68%);
   }
   .container {
     display:grid;grid-template-columns:172px minmax(0,1fr);gap:0;width:calc(100% - 48px);max-width:1536px;
     margin:26px auto;padding:12px;border-radius:42px;border:1px solid #fffaf5;position:relative;z-index:1;
-    background:linear-gradient(124deg,#ffffff42,#ffece075 48%,#ffdec45c);
+    /* Nearly opaque parchment so falling leaves / background never blend with text */
+    background:linear-gradient(124deg,#fffbf6e8,#fdf1e3ee 48%,#fbe9d6e8);
     box-shadow:inset 0 2px 2px #fff,inset 0 -2px 3px #e88c4bb3,inset 2px 0 3px #fff,0 0 0 1px #ef9b61,0 0 0 3px #ffedd980,0 18px 60px #c06a272e;
   }
   .container::before,.container::after{content:"";position:absolute;pointer-events:none;border-radius:inherit;z-index:0}
   .container::before{inset:4px;border:1px solid #fff9;box-shadow:inset 0 0 0 1px #f4a06147}
   .container::after{inset:8px;border:1px solid #ffffffb3;border-radius:34px}
-  .journal-content{min-width:0;position:relative;padding:24px 22px 14px;border:1px solid #fff9;border-radius:30px;background:linear-gradient(125deg,#fff6f163,#ffefe075)}
+  .journal-content{min-width:0;position:relative;padding:24px 22px 14px;border:1px solid #fff9;border-radius:30px;background:linear-gradient(125deg,#fffaf5ee,#fdf0e2ec)}
   .glass-navigation{position:sticky;top:38px;align-self:start;min-width:0;padding:20px 10px 24px 2px}
   .nav-wordmark{display:flex;align-items:center;gap:10px;padding:7px 12px 30px;color:var(--primary);font-size:16px;font-weight:750;letter-spacing:-.03em}
   .nav-wordmark .glass-icon{width:25px;height:25px}.nav-items{display:grid;gap:8px}
@@ -2843,8 +2844,8 @@ body[data-tech-admin] .role-banner{background:#fef3c7;border-color:#79450a;color
   .summary-card .summary-symbol{width:43px;height:43px;border-radius:50%;border:0;box-shadow:inset 0 2px 5px #fff5;background:linear-gradient(140deg,#ffd9ad5c,#ffbc8340);color:var(--primary)}
   .summary-label{font-size:11px}.summary-value{font-size:28px}.summary-note{font-size:9px}.summary-card.present .summary-value{color:var(--success)}.summary-card.absent .summary-value{color:var(--absent-text)}.summary-card.late .summary-value{color:var(--late-text)}
   .journal-panel,.table-card,.lessons-panel,.sync-panel,.offline-panel{backdrop-filter:blur(12px) saturate(130%);-webkit-backdrop-filter:blur(12px) saturate(130%);border-color:#ffffffc9}
-  .journal-panel{border-radius:26px 26px 0 0;padding:17px 18px 14px;margin:0;border-bottom:0;background:linear-gradient(135deg,#fff8f587,#fff3e761)}
-  .table-card{border-radius:0 0 26px 26px;padding:0 12px 0;border-top:0;background:linear-gradient(135deg,#fff8f587,#fff3e761)}
+  .journal-panel{border-radius:26px 26px 0 0;padding:17px 18px 14px;margin:0;border-bottom:0;background:linear-gradient(135deg,#fffaf6ee,#fdf2e6ec)}
+  .table-card{border-radius:0 0 26px 26px;padding:0 12px 0;border-top:0;background:linear-gradient(135deg,#fffaf6ee,#fdf2e6ec)}
   .table-card .table-wrapper{border:1px solid var(--border-subtle);border-radius:16px;background:var(--glass-table)}
   .table-caption{background:transparent;border:0;padding:11px 4px;font-size:10px;gap:12px}.table-caption p:last-child{font-size:10px}
   .journal-heading .month-title{font-size:19px;letter-spacing:-.025em}.journal-heading .legend{font-size:10px;gap:12px}
@@ -2861,8 +2862,8 @@ body[data-tech-admin] .role-banner{background:#fef3c7;border-color:#79450a;color
   #attendanceTableCard[data-view="day"] .attendance-button{width:150px;min-height:44px;height:44px;gap:8px;justify-content:flex-start;padding:5px 12px 5px 5px;border-radius:999px;font-size:12px}
   .day-status-icon{display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:50%;flex-shrink:0;box-shadow:inset 0 1px 2px #fff8;background:#fff5;font-size:16px}
   .day-status-label{overflow:hidden;text-overflow:ellipsis}#attendanceTableCard[data-view="day"] th.student-name-cell{width:60%;max-width:none}
-  #attendanceTableCard[data-view="week"] .actions-column{display:none}.offline-panel{margin:15px 0;border-radius:17px;background:#fff8f55c}.offline-panel summary{font-size:10px;padding:10px 13px}
-  .lessons-panel,.sync-panel{border-radius:24px;margin-top:16px;background:linear-gradient(125deg,#fff8f58c,#fff0e05c)}.lessons-panel>summary{padding:17px 18px}.lessons-panel>summary h2{font-size:16px}
+  #attendanceTableCard[data-view="week"] .actions-column{display:none}.offline-panel{margin:15px 0;border-radius:17px;background:#fffaf6ea}.offline-panel summary{font-size:10px;padding:10px 13px}
+  .lessons-panel,.sync-panel{border-radius:24px;margin-top:16px;background:linear-gradient(125deg,#fffaf6ee,#fcf0e2ec)}.lessons-panel>summary{padding:17px 18px}.lessons-panel>summary h2{font-size:16px}
   .modal{border-radius:30px;border-color:var(--glass-line);box-shadow:inset 0 2px 2px #fff,0 0 0 3px #fff8f026,0 30px 90px #83420952}.att-option{border-radius:22px}.student-card-day{border-radius:13px}
   .toast{z-index:2000;max-width:min(540px,calc(100% - 32px));border-radius:20px;line-height:1.5}
   #journalControls,#lessonsPanel{scroll-margin-top:24px}
@@ -2876,7 +2877,7 @@ body[data-tech-admin] .role-banner{background:#fef3c7;border-color:#79450a;color
   .container{grid-template-columns:70px minmax(0,1fr);width:calc(100% - 26px);margin:18px auto;border-radius:34px;padding:10px}.journal-content{padding:20px 16px 14px}.glass-navigation{padding:20px 8px 20px 0}.nav-wordmark{padding:8px 10px 25px}.nav-wordmark span,.nav-item span,.nav-footnote{display:none}button.nav-item{min-width:0;justify-content:center;padding:0;min-height:48px}.summary-card{grid-template-columns:32px minmax(0,1fr);padding:13px 10px;column-gap:8px}.summary-card .summary-symbol{width:32px;height:32px}.summary-symbol .glass-icon{width:21px;height:21px}.summary-note{font-size:8px}.page-header h1{font-size:35px}
 }
 @media screen and (max-width:700px){
-  .container{display:block;width:calc(100% - 20px);margin:10px auto 104px;padding:7px;border-radius:34px}.container::after{inset:5px;border-radius:29px}.container::before{inset:2px}.journal-content{padding:18px 10px 16px;border-radius:27px;background:linear-gradient(130deg,#fff9f557,#ffeedc7d)}
+  .container{display:block;width:calc(100% - 20px);margin:10px auto 104px;padding:7px;border-radius:34px}.container::after{inset:5px;border-radius:29px}.container::before{inset:2px}.journal-content{padding:18px 10px 16px;border-radius:27px;background:linear-gradient(130deg,#fffaf5ee,#fdf0e2ec)}
   .glass-navigation{position:fixed;left:50%;bottom:calc(12px + env(safe-area-inset-bottom));transform:translateX(-50%);top:auto;z-index:35;width:calc(100% - 28px);max-width:440px;padding:6px;border:1px solid #fff;border-radius:28px;background:linear-gradient(145deg,#fff0e9f0,#ffeddde0);box-shadow:inset 0 2px 2px #fff,0 0 0 3px #ffe7d961,0 10px 30px #92531f4d;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
   .nav-wordmark,.nav-footnote,.nav-item[data-nav="students"],.nav-item[data-nav="settings"]{display:none}.nav-items{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}button.nav-item{min-height:55px;padding:4px 5px;flex-direction:column;justify-content:center;gap:2px;font-size:10px;border-radius:21px}.nav-item .glass-icon{width:21px;height:21px}
   .page-header{padding:0 3px;margin-bottom:9px;gap:9px}.page-header-text{flex-basis:100%}.page-header h1{font-size:30px}.eyebrow{font-size:8px;letter-spacing:.12em;margin-bottom:6px}.subtitle{display:none}.header-actions{width:100%;max-width:none;justify-content:flex-start;gap:6px}.header-actions button{min-height:35px;font-size:10px;padding:0 11px}.header-actions #reportsButton{min-width:0;gap:5px}.header-actions #reportsButton .glass-icon{width:14px;height:14px}.storage-badge{font-size:9px;flex-basis:100%;margin:0 0 1px}.header-actions .version-badge{margin-left:auto;min-width:0}.version-badge .glass-icon{width:13px;height:13px}.header-actions #printButton{display:none}
@@ -2894,10 +2895,10 @@ body[data-tech-admin] .role-banner{background:#fef3c7;border-color:#79450a;color
   .journal-content{padding:15px 6px 13px}.page-header h1{font-size:27px}.header-actions button{font-size:9px;padding:0 8px}.header-actions{gap:4px}.summary-label{font-size:7px}.summary-card{min-height:65px}.journal-panel{padding:10px 8px}.student-entry button{padding:0 7px;font-size:9px}#attendanceTableCard[data-view="week"] th.student-column,#attendanceTableCard[data-view="week"] th.student-name-cell{width:72px;max-width:72px;padding:5px}#attendanceTableCard[data-view="week"] .student-card-trigger{font-size:9px!important}#attendanceTableCard[data-view="day"] .attendance-button{width:99px;font-size:10px}.day-status-icon{width:25px;height:25px}.table-card{padding:0 6px}.header-actions .version-badge .glass-icon{display:none}
 }
 @media screen and (prefers-color-scheme:dark){
-  :root{--background:#51320b;--text:#fbe5d0;--text-strong:#fff7ee;--text-soft:#f4d4b7;--muted:#e5c7a7;--placeholder:#d6b79b;--card:#63380e;--surface-1:#6b3d16;--surface-2:#7f481d;--border-subtle:#835026;--primary:#ffcd93;--primary-dark:#ffd9ae;--primary-light:#f9a071;--primary-soft:#723f19;--glass:rgba(58,38,18,.6);--glass-table:rgba(48,30,14,.94);--glass-field:rgba(72,46,22,.82);--glass-strong:rgba(40,25,11,.97);--glass-line:rgba(250,220,170,.35);--success:#f6c48b;--success-soft:#5e380d;--absent:#5a334b;--absent-text:#ffbed7;--late:#56452d;--late-text:#ffda9c;--glass-shadow:inset 0 1px 1px #ffe5ce40,0 3px 10px #28150033}
-  body{background-color:#543009;background-image:radial-gradient(ellipse at 10% 2%,#8f5020,transparent 60%),radial-gradient(ellipse at 90% 72%,#885d27,transparent 55%),linear-gradient(130deg,#492e0c,#5d2d0f)}body::before{opacity:.17}.container{border-color:#fcceae80;background:linear-gradient(125deg,#b86d3c33,#753a1461);box-shadow:inset 0 1px 2px #ffe5d79c,0 0 0 1px #dda97f5c,0 18px 60px #1e160061}.container::before,.container::after{border-color:#ffcfa438}.journal-content{border-color:#ffd0a538;background:linear-gradient(125deg,#763f1466,#56300b7a)}
+  :root{--background:#51320b;--text:#fbe5d0;--text-strong:#fff7ee;--text-soft:#f4d4b7;--muted:#e5c7a7;--placeholder:#d6b79b;--card:#63380e;--surface-1:#6b3d16;--surface-2:#7f481d;--border-subtle:#835026;--primary:#ffcd93;--primary-dark:#ffd9ae;--primary-light:#f9a071;--primary-soft:#723f19;--glass:rgba(58,38,18,.92);--glass-table:rgba(48,30,14,.97);--glass-field:rgba(72,46,22,.9);--glass-strong:rgba(40,25,11,.98);--glass-line:rgba(250,220,170,.35);--success:#f6c48b;--success-soft:#5e380d;--absent:#5a334b;--absent-text:#ffbed7;--late:#56452d;--late-text:#ffda9c;--glass-shadow:inset 0 1px 1px #ffe5ce40,0 3px 10px #28150033}
+  body{background-color:#543009;background-image:radial-gradient(ellipse at 10% 2%,#8f5020,transparent 60%),radial-gradient(ellipse at 90% 72%,#885d27,transparent 55%),linear-gradient(130deg,#492e0c,#5d2d0f)}body::before{opacity:.17}.container{border-color:#fcceae80;background:linear-gradient(125deg,#6b3d14f0,#4a2708f2);box-shadow:inset 0 1px 2px #ffe5d79c,0 0 0 1px #dda97f5c,0 18px 60px #1e160061}.container::before,.container::after{border-color:#ffcfa438}.journal-content{border-color:#ffd0a538;background:linear-gradient(125deg,#5c3210ee,#45260af2)}
   .nav-wordmark{color:var(--text-soft)}button.nav-item{color:#ffe3c4;font-weight:650}button.nav-item:not(.is-active){background:#8a5a2a5c;border-color:#ffd6b259;box-shadow:inset 0 1px 1px #ffe5ce3d}button.nav-item:hover,button.nav-item:focus-visible{background:linear-gradient(125deg,#a5682e9e,#8a4a1b7a);border-color:#ffd9bd9e;color:#ffeeda}button.nav-item.is-active{background:linear-gradient(125deg,#c07a35b8,#a35a209c);color:#fff3df;border-color:#ffdcbc;box-shadow:inset 0 1px 2px #ffd8b89e,0 4px 14px #00000040;text-shadow:0 1px 1px #3a1d0566}button.secondary,button.version-badge{background:linear-gradient(150deg,#915826b3,#75461c99);color:var(--text-strong);border-color:var(--glass-line);box-shadow:inset 0 1px 1px #ffd8b945,0 3px 10px #2d180126}.sync-overview{background:transparent}.sync-overview strong{background:#5f401c;color:#f7d7b3}.sync-overview[data-state="local"] strong{background:#795128;color:#fbd8c0}.sync-overview p{color:var(--muted)}.sync-notice{background:#533819;border-color:#826544;color:#fae5cc}.view-switcher{background:#6c3c1b80;border-color:#f0ba8e59;box-shadow:inset 0 2px 3px #271c002e}.summary-card .summary-symbol{box-shadow:none}
-  .journal-panel,.table-card,.lessons-panel,.sync-panel{background:linear-gradient(125deg,#84491c7a,#613b1299);border-color:#ffd7b140}.table-card .table-wrapper{background:var(--glass-table)}.offline-panel{background:#76491f66;border-color:#ffd7b140}.modal{box-shadow:inset 0 1px 2px #ffd6b370,0 30px 90px #241a00a6}input,select,textarea{box-shadow:inset 0 1px 1px #ffdcc833!important}
+  .journal-panel,.table-card,.lessons-panel,.sync-panel{background:linear-gradient(125deg,#7a4318e8,#59370ff0);border-color:#ffd7b140}.table-card .table-wrapper{background:var(--glass-table)}.offline-panel{background:#6d431ae0;border-color:#ffd7b140}.modal{box-shadow:inset 0 1px 2px #ffd6b370,0 30px 90px #241a00a6}input,select,textarea{box-shadow:inset 0 1px 1px #ffdcc833!important}
   #attendanceTableCard th.today-column{background:#8d4c1e;color:#ffead1}#attendanceTableCard td.today-column{background:#8d4c1e30}#attendanceTableCard .attendance-button.present,#attendanceTableCard .attendance-button.absent,#attendanceTableCard .attendance-button.late{border-color:#ffffff24;box-shadow:inset 0 1px 2px #ffffff33}.day-status-icon{background:#ffffff10;box-shadow:inset 0 1px 1px #ffffff33}
   .glass-navigation{border-color:#ffd6b280}
 }
@@ -3404,7 +3405,7 @@ html[data-theme="dark"] .att-option-late { border-color: rgba(137, 116, 72, .75)
     --border:#eadfce; --border-strong:#d6c3a8; --border-subtle:#f3ecdf;
     --weekend:#faf5ec; --today-bg:#ffedd5; --today-text:#9a3412; --today-border:#fb923c;
     --row-hover:#fdf3e3; --row-hover-border:#fdba74;
-    --glass:rgba(255,250,240,.5); --glass-strong:rgba(255,250,240,.86); --glass-table:rgba(255,250,240,.8);
+    --glass:rgba(255,250,240,.9); --glass-strong:rgba(255,250,240,.97); --glass-table:rgba(255,250,240,.95);
     --glass-line:rgba(255,255,255,.9); --glass-edge:rgba(194,110,60,.32); --glass-highlight:rgba(255,248,235,.9);
     --glass-field:rgba(255,251,244,.68); --glass-button:linear-gradient(170deg,#e8935a 0%,#c2540c 47%,#9a3e08 100%);
     --glass-shadow:0 8px 24px rgba(122,72,32,.1), inset 0 1px 1px rgba(255,255,255,.95), inset 0 -1px 1px rgba(150,95,50,.12);
@@ -3424,7 +3425,7 @@ html[data-theme="dark"] .att-option-late { border-color: rgba(137, 116, 72, .75)
     --border:#3d2f1f; --border-strong:#57432b; --border-subtle:#2b1f14;
     --weekend:#241a0f; --today-bg:#4a2c12; --today-text:#fed7aa; --today-border:#f97316;
     --row-hover:#362918; --row-hover-border:#f97316;
-    --glass:rgba(48,34,20,.62); --glass-strong:rgba(38,26,15,.92); --glass-table:rgba(36,25,14,.9);
+    --glass:rgba(48,34,20,.92); --glass-strong:rgba(38,26,15,.97); --glass-table:rgba(36,25,14,.96);
     --glass-line:rgba(250,225,190,.28); --glass-edge:rgba(10,5,2,.45); --glass-highlight:rgba(250,220,170,.24);
     --glass-field:rgba(62,44,26,.72); --glass-button:linear-gradient(165deg,#a45a24,#7c3d12 53%,#5f2e0d);
     --button-text:#fdf3e3;
@@ -3458,10 +3459,10 @@ html[data-theme="dark"] .att-option-late { border-color: rgba(137, 116, 72, .75)
     background-attachment: fixed;
   }
   body::before {
-    content:""; position:fixed; inset:0; pointer-events:none; z-index:0; opacity:.35;
+    content:""; position:fixed; inset:0; pointer-events:none; z-index:-1; opacity:.35;
     background:linear-gradient(132deg,transparent 7%,rgba(255,255,255,0) 12%,rgba(255,244,214,.65) 12.4%,transparent 13.8%,transparent 28%,rgba(255,250,235,.4) 29%,transparent 33%);
   }
-  .journal-panel,.table-card,.lessons-panel,.sync-panel{background:linear-gradient(125deg,#7c3d127a,#4a2c1299);border-color:rgba(250,225,190,.25)}
+  .journal-panel,.table-card,.lessons-panel,.sync-panel{background:linear-gradient(125deg,#4f3118ee,#3a2410f2);border-color:rgba(250,225,190,.25)}
   #attendanceTableCard th.today-column{background:#7c4a1a;color:#ffe9c9}
   .container{background:linear-gradient(145deg,#5a3a1c66,#2b1f1466);box-shadow:0 24px 80px #0d08034d, inset 0 1px 2px #fad9a840, 0 0 0 1px #8a6a4440}
   .modal-backdrop{background:#140a0366}
@@ -3477,10 +3478,12 @@ html[data-theme="dark"] .att-option-late { border-color: rgba(137, 116, 72, .75)
    Base rules live OUTSIDE any media query so the animation is never limited
    to a single breakpoint or colour scheme.
    ========================================================================== */
-.autumn-leaves { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+/* Leaves sit BEHIND the app content (main.container has z-index:1 and an
+   opaque glass backdrop), so text never overlaps or blends with them. */
+.autumn-leaves { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
 .autumn-leaves span {
   position: absolute; top: -12vh; display: inline-block;
-  font-size: 54px; opacity: .55; filter: saturate(1.15);
+  font-size: 54px; opacity: .38; filter: saturate(1.15);
   will-change: transform;
   animation: leaf-fall linear infinite;
 }
@@ -3522,7 +3525,7 @@ html[data-theme="dark"] .att-option-late { border-color: rgba(137, 116, 72, .75)
    saturate() filter is dropped here), the leaf count is cut in half and the
    remaining ones are simply a little larger. */
 @media screen and (min-width:701px) and (max-width:1100px){
-  .autumn-leaves span{filter:none;font-size:76px; opacity:.5}
+  .autumn-leaves span{filter:none;font-size:76px; opacity:.32}
   .autumn-leaves span:nth-child(1){left:4%;   animation-duration:21s; animation-delay:-2s;  font-size:54px}
   .autumn-leaves span:nth-child(2){left:16%;  animation-duration:26s; animation-delay:-9s;  font-size:72px}
   .autumn-leaves span:nth-child(3){left:28%;  animation-duration:18s; animation-delay:-5s;  font-size:45px}
@@ -3550,7 +3553,7 @@ html[data-theme="dark"] .att-option-late { border-color: rgba(137, 116, 72, .75)
 }
 /* Desktop PCs (>=1101px): full-bleed canopy of leaves across the wide screen */
 @media screen and (min-width:1101px){
-  .autumn-leaves span{font-size:76px; opacity:.48}
+  .autumn-leaves span{font-size:76px; opacity:.3}
   .autumn-leaves span:nth-child(1){left:3%;   animation-duration:23s; animation-delay:-2s;  font-size:58px}
   .autumn-leaves span:nth-child(2){left:13%;  animation-duration:28s; animation-delay:-9s;  font-size:81px}
   .autumn-leaves span:nth-child(3){left:23%;  animation-duration:20s; animation-delay:-5s;  font-size:50px}
@@ -3604,17 +3607,10 @@ html[data-theme="dark"] .autumn-leaves span{opacity:.34}
   body{background-attachment:scroll}
 }
 
-/* Autumn theme: keep falling leaves visible behind the translucent glass card
-   on tablets and PCs (the glass container used to hide them completely). */
-@media screen and (min-width:701px){
-  .container{background:linear-gradient(124deg,#ffffff26,#ffece052 48%,#ffdec43d)}
-}
-@media screen and (min-width:701px) and (prefers-color-scheme:dark){
-  .container{background:linear-gradient(145deg,#5a3a1c40,#2b1f144d)}
-}
-@media screen and (min-width:701px){
-  html[data-theme="dark"] .container{background:linear-gradient(145deg,#5a3a1c40,#2b1f144d)}
-}
+/* Autumn theme: the glass card is now nearly OPAQUE on every device, so the
+   falling leaves stay in the background and never blend with text. The old
+   "see-through container on tablets/PCs" overrides were removed deliberately —
+   they were the reason labels merged with the leaf pattern. */
 
 /* ============================================================
    PHONE OPTIMIZATION: button text + size (smart fit, no clipping)

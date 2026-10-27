@@ -1,0 +1,28 @@
+{
+  "name": "Посещаемость — журнал класса",
+  "short_name": "Журнал",
+  "description": "Учебный журнал посещаемости, домашних заданий и отчётов. Работает офлайн, данные хранятся на устройстве.",
+  "lang": "ru",
+  "dir": "ltr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#fdf6ee",
+  "theme_color": "#c2410c",
+  "categories": ["education", "productivity"],
+  "icons": [
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
