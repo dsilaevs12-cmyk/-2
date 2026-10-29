@@ -2746,7 +2746,9 @@ function wireViewEvents() {
   if(navigation)navigation.addEventListener("click",function(event){
     var button=event.target.closest("[data-nav]");if(!button)return;
     var destination=button.dataset.nav;
-    if(!["reports","settings"].includes(destination))navigation.querySelectorAll("[data-nav]").forEach(function(item){item.classList.toggle("is-active",item===button);if(item===button)item.setAttribute("aria-current","location");else item.removeAttribute("aria-current");});
+    // Only the real section tabs can take the active highlight; overlay-style
+    // destinations (reports/settings/account) must not light up a nav pill.
+    if(["journal","homework"].includes(destination))navigation.querySelectorAll("[data-nav]").forEach(function(item){item.classList.toggle("is-active",item===button);if(item===button)item.setAttribute("aria-current","location");else item.removeAttribute("aria-current");});
     if(destination==="reports"){dom.reportsButton.click();return;}
     if(destination==="settings"){closeAccountView();dom.versionButton.click();return;}
     if(destination==="account"){openAccountView();return;}
