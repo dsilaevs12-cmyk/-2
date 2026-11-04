@@ -4299,6 +4299,12 @@ window.addEventListener("storage", function (e) {
 
 // Always visible connection status; incoming notices survive subsequent no-op polls.
 ["syncOverview","syncOverviewText","syncOverviewDetail","syncQuickButton","syncNotice"].forEach(function(id){dom[id]=document.getElementById(id);});
+/* Device-sync sections removed from the interface: hide them defensively even
+   if an older cached copy of index.html is still being served (service worker
+   or browser cache), and keep every sync DOM lookup crash-proof. */
+[".sync-overview", ".sync-panel", ".auth-sync-open", "#authSyncPanel", '[data-nav="sync"]'].forEach(function(sel){
+  document.querySelectorAll(sel).forEach(function(el){ el.style.setProperty("display", "none", "important"); });
+});
 function renderSyncOverview(){
   if(!dom.syncOverviewText)return;
   var conflictCount=Object.keys(offline.conflicts).length,count=queuedEntries().length;
@@ -4332,8 +4338,9 @@ function announceIncoming(before,after,source){
 }
 syncListen(dom.syncQuickButton,"click",function(){
   if(syncWritable())return fullSync("manual");
-  var panel=dom.syncConfig.closest("details");if(panel)panel.open=true;
-  dom.syncConfig.classList.add("open");dom.toggleSyncConfigButton.setAttribute("aria-expanded","true");
+  var panel=dom.syncConfig?dom.syncConfig.closest("details"):null;if(panel)panel.open=true;
+  if(!dom.syncConfig)return;
+  dom.syncConfig.classList.add("open");if(dom.toggleSyncConfigButton)dom.toggleSyncConfigButton.setAttribute("aria-expanded","true");
   dom.githubToken.value=syncConfig.token;dom.gistId.value=syncConfig.gistId;
   if(syncConfigured()&&!syncWritable()){try{fullSync("manual");}catch(error){}}
   dom.syncConfig.scrollIntoView({behavior:"smooth",block:"center"});dom.githubToken.focus({preventScroll:true});
