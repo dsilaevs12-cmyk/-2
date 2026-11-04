@@ -17,12 +17,12 @@
       --border-strong: #d6c3a8;
       --border-subtle: #f3ecdf;
 
-      --text: #3d2c1e;
-      --text-strong: #241a10;
-      --text-soft: #6b5744;
-      --muted: #8a7560;
-      --muted-strong: #6b5744;
-      --placeholder: #b3a188;
+      --text: #332416;
+      --text-strong: #1c1208;
+      --text-soft: #5a4630;
+      --muted: #75604a;
+      --muted-strong: #5a4630;
+      --placeholder: #9d8a70;
 
       --success: #10b981;
       --success-dark: #059669;
@@ -101,11 +101,11 @@
         --border-strong: #57432b;
         --border-subtle: #2b1f14;
 
-        --text: #ede0cf;
-        --text-strong: #faf3e8;
-        --text-soft: #d6c5ad;
-        --muted: #a08b6e;
-        --muted-strong: #d6c5ad;
+        --text: #cbb69b;
+        --text-strong: #d8c6ac;
+        --text-soft: #b39d80;
+        --muted: #8f7a5e;
+        --muted-strong: #7d6a4f;
         --placeholder: #7a674e;
 
         --success-soft: #064e3b;
@@ -1505,7 +1505,7 @@ html[data-theme="dark"] .dev-section { background: #3b2e16; border-color: #3d2f1
 
     .dev-section .help-text {
       margin: 0 0 10px;
-      color: var(--muted);
+      color: var(--muted-strong);
       font-size: var(--fs-xs);
       opacity: 1;
       line-height: 1.5;
